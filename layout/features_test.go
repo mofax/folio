@@ -876,3 +876,23 @@ func TestFlexRow_TextAlignRight_InWidthChild(t *testing.T) {
 		t.Error("text-align: right did not push text to right edge of 270pt flex column")
 	}
 }
+
+// --- Div margin-left: auto (right-align) ---
+
+func TestDiv_MarginLeftAuto_RightAligns(t *testing.T) {
+	d := NewDiv().
+		SetWidthUnit(Pt(200)).
+		SetHRight(true).
+		Add(NewParagraph("Content", font.Helvetica, 12))
+
+	plan := d.PlanLayout(LayoutArea{Width: 600, Height: 1000})
+	if len(plan.Blocks) == 0 {
+		t.Fatal("no blocks")
+	}
+	b := plan.Blocks[0]
+	// 200pt wide div in 600pt area → X should be 400.
+	t.Logf("Block: X=%.1f, Width=%.1f", b.X, b.Width)
+	if b.X < 399 || b.X > 401 {
+		t.Errorf("X = %.1f, want 400 (right-aligned 200pt div in 600pt area)", b.X)
+	}
+}

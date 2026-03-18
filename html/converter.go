@@ -587,7 +587,8 @@ func (c *converter) convertElementInner(n *html.Node, style computedStyle) []lay
 
 	// Inline-block: renders as a block (Div) but participates in inline flow.
 	// For PDF purposes, treat as a block with box-model support.
-	if style.Display == "inline-block" {
+	// Special elements (SVG, IMG) fall through to their specific handlers below.
+	if style.Display == "inline-block" && n.DataAtom != atom.Svg && n.DataAtom != atom.Img {
 		return c.convertBlock(n, style)
 	}
 
@@ -1217,9 +1218,11 @@ func applyDivStyles(div *layout.Div, style computedStyle, containerWidth float64
 	if style.MarginBottom > 0 {
 		div.SetSpaceAfter(style.MarginBottom)
 	}
-	// Horizontal centering: margin-left: auto + margin-right: auto.
+	// Horizontal alignment via auto margins.
 	if style.MarginLeftAuto && style.MarginRightAuto {
 		div.SetHCenter(true)
+	} else if style.MarginLeftAuto && !style.MarginRightAuto {
+		div.SetHRight(true)
 	}
 	if style.BackgroundColor != nil {
 		div.SetBackground(*style.BackgroundColor)

@@ -61,6 +61,7 @@ type Div struct {
 	maxHeightUnit *UnitValue // lazy-resolved max-height
 	heightUnit    *UnitValue // lazy-resolved explicit height (forces exact height)
 	hCenter       bool       // true = horizontally center within parent (margin: auto)
+	hRight        bool       // true = right-align within parent (margin-left: auto)
 	borderRadius  float64    // corner radius (points, 0 = sharp corners)
 	opacity       float64    // 0..1 (0 = default/opaque, meaning "not set")
 	overflow      string     // "visible" (default), "hidden"
@@ -244,6 +245,12 @@ func (d *Div) HasExplicitHeight() bool { return d.heightUnit != nil }
 // SetHCenter enables horizontal centering (margin: 0 auto behavior).
 func (d *Div) SetHCenter(enabled bool) *Div {
 	d.hCenter = enabled
+	return d
+}
+
+// SetHRight enables right-alignment (margin-left: auto behavior).
+func (d *Div) SetHRight(enabled bool) *Div {
+	d.hRight = enabled
 	return d
 }
 
@@ -522,10 +529,12 @@ func (d *Div) PlanLayout(area LayoutArea) LayoutPlan {
 	capturedTotalH := totalH
 	capturedOuterW := effectiveWidth
 
-	// Horizontal centering (margin: 0 auto): offset X to center within parent.
+	// Horizontal alignment via auto margins.
 	xPos := d.relOffsetX
 	if d.hCenter && effectiveWidth < area.Width {
 		xPos += (area.Width - effectiveWidth) / 2
+	} else if d.hRight && effectiveWidth < area.Width {
+		xPos += area.Width - effectiveWidth
 	}
 
 	containerBlock := PlacedBlock{
