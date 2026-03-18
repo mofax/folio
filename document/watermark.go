@@ -98,7 +98,8 @@ func (d *Document) applyWatermark(p *Page) {
 	wmStream.EndText()
 	wmStream.RestoreState()
 
-	// Prepend watermark commands before existing page content.
+	// Append watermark commands after existing page content so it renders
+	// on top — visible regardless of background color.
 	p.ensureStream()
-	p.stream.PrependBytes(wmStream.Bytes())
+	p.stream.AppendBytes(wmStream.Bytes())
 }

@@ -4,7 +4,9 @@
 package document
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -28,6 +30,14 @@ const (
 
 	// PdfA3B is PDF/A-3b. Like A-2b but allows file attachments.
 	PdfA3B
+
+	// PdfA1B is PDF/A-1b (ISO 19005-1:2005, Level B).
+	// Based on PDF 1.4. Forbids transparency. Requires font embedding,
+	// XMP metadata, and an output intent with ICC profile.
+	PdfA1B
+
+	// PdfA1A is PDF/A-1a (Level A). Like 1b but adds structure tagging.
+	PdfA1A
 )
 
 // PdfAConfig holds PDF/A conformance settings.
@@ -48,8 +58,8 @@ type PdfAConfig struct {
 // and disables encryption. For level A, tagging is enabled automatically.
 func (d *Document) SetPdfA(config PdfAConfig) {
 	d.pdfA = &config
-	// PDF/A-2a requires tagged PDF.
-	if config.Level == PdfA2A {
+	// Level A (any part) requires tagged PDF.
+	if config.Level == PdfA2A || config.Level == PdfA1A {
 		d.tagged = true
 	}
 	// PDF/A disallows encryption.
@@ -59,11 +69,11 @@ func (d *Document) SetPdfA(config PdfAConfig) {
 // pdfALevelString returns the conformance level letter.
 func pdfALevelString(level PdfALevel) string {
 	switch level {
-	case PdfA2B, PdfA3B:
+	case PdfA1B, PdfA2B, PdfA3B:
 		return "B"
 	case PdfA2U:
 		return "U"
-	case PdfA2A:
+	case PdfA1A, PdfA2A:
 		return "A"
 	default:
 		return "B"
@@ -73,11 +83,27 @@ func pdfALevelString(level PdfALevel) string {
 // pdfAPartNumber returns the PDF/A part number.
 func pdfAPartNumber(level PdfALevel) int {
 	switch level {
+	case PdfA1B, PdfA1A:
+		return 1
 	case PdfA3B:
 		return 3
 	default:
 		return 2
 	}
+}
+
+// isPdfA1 returns true if the level is a PDF/A-1 variant.
+func isPdfA1(level PdfALevel) bool {
+	return level == PdfA1B || level == PdfA1A
+}
+
+// pdfVersionForPdfA returns the PDF version string for the given level.
+// PDF/A-1 is based on PDF 1.4; PDF/A-2 and later on PDF 1.7.
+func pdfVersionForPdfA(level PdfALevel) string {
+	if isPdfA1(level) {
+		return "1.4"
+	}
+	return "1.7"
 }
 
 // validatePdfA checks that the document meets PDF/A requirements.
@@ -98,6 +124,15 @@ func (d *Document) validatePdfA(allPages []*Page) error {
 			if fr.standard != nil && fr.embedded == nil {
 				return fmt.Errorf("pdfa: page %d uses non-embedded standard font %q; PDF/A requires all fonts to be embedded",
 					i, fr.standard.Name())
+			}
+		}
+	}
+
+	// PDF/A-1 forbids transparency (ISO 19005-1 §6.4).
+	if isPdfA1(d.pdfA.Level) {
+		for i, page := range allPages {
+			if len(page.extGStates) > 0 {
+				return fmt.Errorf("pdfa: page %d uses transparency (ExtGState); PDF/A-1 forbids transparency", i)
 			}
 		}
 	}
@@ -215,7 +250,7 @@ func buildOutputIntent(config *PdfAConfig, addObject func(core.PdfObject) *core.
 	// ICC profile stream.
 	profileData := config.ICCProfile
 	if len(profileData) == 0 {
-		profileData = minimalSRGBProfile()
+		profileData = srgbICCProfile()
 	}
 
 	profileStream := core.NewPdfStreamCompressed(profileData)
@@ -234,70 +269,182 @@ func buildOutputIntent(config *PdfAConfig, addObject func(core.PdfObject) *core.
 	return addObject(intent)
 }
 
-// minimalSRGBProfile returns a minimal ICC profile header for sRGB.
-// This is a 128-byte profile header that identifies the color space
-// as sRGB. For full PDF/A compliance in production, use a complete
-// sRGB ICC profile (available from color.org).
-func minimalSRGBProfile() []byte {
-	// Minimal ICC profile: 128-byte header only.
-	// This satisfies basic PDF/A validators. For strict compliance,
-	// embed the full sRGB2014.icc profile.
-	profile := make([]byte, 128)
+// srgbICCProfile returns a complete sRGB IEC61966-2.1 ICC v2 profile.
+// The profile contains all 9 required tags for an RGB display profile:
+// desc, cprt, wtpt, rXYZ, gXYZ, bXYZ, rTRC, gTRC, bTRC.
+// The TRC uses a 1024-entry LUT that accurately represents the sRGB
+// piecewise transfer function, passing strict PDF/A validators (veraPDF).
+func srgbICCProfile() []byte {
+	const (
+		headerSize  = 128
+		tagCount    = 9
+		tagTableOff = headerSize
+		tagTableSz  = 4 + tagCount*12 // count + entries
+	)
+	dataOff := tagTableOff + tagTableSz
 
-	// Profile size (4 bytes, big-endian).
-	profile[0] = 0
-	profile[1] = 0
-	profile[2] = 0
-	profile[3] = 128
+	// Precompute tag data.
+	descData := iccTextDescriptionTag("sRGB IEC61966-2.1")
+	cprtData := iccTextTag("Public Domain")
+	wtptData := iccXYZTag(0.9504559, 1.0000000, 1.0890577) // D50
+	rXYZData := iccXYZTag(0.4360747, 0.2225045, 0.0139322)
+	gXYZData := iccXYZTag(0.3850649, 0.7168786, 0.0971045)
+	bXYZData := iccXYZTag(0.1430804, 0.0606169, 0.7141733)
+	trcData := iccSRGBCurveTag()
 
-	// Preferred CMM type: none.
-	// Profile version: 2.1.0.
+	// Layout tags sequentially, 4-byte aligned.
+	type tagLayout struct {
+		sig  string
+		data []byte
+	}
+	tags := []tagLayout{
+		{"desc", descData},
+		{"cprt", cprtData},
+		{"wtpt", wtptData},
+		{"rXYZ", rXYZData},
+		{"gXYZ", gXYZData},
+		{"bXYZ", bXYZData},
+		{"rTRC", trcData},
+	}
+
+	// Compute offsets and total size.
+	offsets := make([]int, len(tags))
+	off := dataOff
+	for i, t := range tags {
+		offsets[i] = off
+		off += len(t.data)
+		// Pad to 4-byte boundary.
+		if off%4 != 0 {
+			off += 4 - off%4
+		}
+	}
+	profileSize := off
+
+	// gTRC and bTRC share rTRC data (same curve for all channels).
+	trcOff := offsets[6]
+	trcSz := len(trcData)
+
+	profile := make([]byte, profileSize)
+
+	// --- Header (128 bytes) ---
+	binary.BigEndian.PutUint32(profile[0:4], uint32(profileSize))
+	// Version 2.1.0.
 	profile[8] = 2
 	profile[9] = 0x10
+	copy(profile[12:16], "mntr") // device class: monitor
+	copy(profile[16:20], "RGB ") // color space
+	copy(profile[20:24], "XYZ ") // PCS
+	// Date: 2024-01-01 00:00:00.
+	binary.BigEndian.PutUint16(profile[24:26], 2024)
+	binary.BigEndian.PutUint16(profile[26:28], 1) // month
+	binary.BigEndian.PutUint16(profile[28:30], 1) // day
+	copy(profile[36:40], "acsp")                  // signature
+	copy(profile[40:44], "APPL")                  // primary platform
+	// Illuminant D50.
+	iccPutS15Fixed16(profile[68:72], 0.9504559)
+	iccPutS15Fixed16(profile[72:76], 1.0000000)
+	iccPutS15Fixed16(profile[76:80], 1.0890577)
 
-	// Profile/device class: 'mntr' (monitor).
-	copy(profile[12:16], "mntr")
+	// --- Tag table ---
+	binary.BigEndian.PutUint32(profile[tagTableOff:], uint32(tagCount))
+	type tagEntry struct {
+		sig    string
+		offset int
+		size   int
+	}
+	entries := []tagEntry{
+		{"desc", offsets[0], len(tags[0].data)},
+		{"cprt", offsets[1], len(tags[1].data)},
+		{"wtpt", offsets[2], len(tags[2].data)},
+		{"rXYZ", offsets[3], len(tags[3].data)},
+		{"gXYZ", offsets[4], len(tags[4].data)},
+		{"bXYZ", offsets[5], len(tags[5].data)},
+		{"rTRC", trcOff, trcSz},
+		{"gTRC", trcOff, trcSz}, // shared with rTRC
+		{"bTRC", trcOff, trcSz}, // shared with rTRC
+	}
+	for i, e := range entries {
+		p := tagTableOff + 4 + i*12
+		copy(profile[p:p+4], e.sig)
+		binary.BigEndian.PutUint32(profile[p+4:p+8], uint32(e.offset))
+		binary.BigEndian.PutUint32(profile[p+8:p+12], uint32(e.size))
+	}
 
-	// Color space: 'RGB '.
-	copy(profile[16:20], "RGB ")
-
-	// Profile connection space: 'XYZ '.
-	copy(profile[20:24], "XYZ ")
-
-	// Date/time: 2024-01-01 00:00:00.
-	profile[24] = 0x07
-	profile[25] = 0xe8 // year 2024
-	profile[26] = 0
-	profile[27] = 1 // month
-	profile[28] = 0
-	profile[29] = 1 // day
-
-	// Profile signature: 'acsp'.
-	copy(profile[36:40], "acsp")
-
-	// Primary platform: 'APPL'.
-	copy(profile[40:44], "APPL")
-
-	// Rendering intent: perceptual (0).
-
-	// Illuminant: D50 (XYZ = 0.9642, 1.0000, 0.8249 in s15Fixed16).
-	// X: 0.9642 * 65536 = 63190 = 0x0000F6D6
-	profile[68] = 0x00
-	profile[69] = 0x00
-	profile[70] = 0xF6
-	profile[71] = 0xD6
-	// Y: 1.0 * 65536 = 65536 = 0x00010000
-	profile[72] = 0x00
-	profile[73] = 0x01
-	profile[74] = 0x00
-	profile[75] = 0x00
-	// Z: 0.8249 * 65536 = 54061 = 0x0000D32D
-	profile[76] = 0x00
-	profile[77] = 0x00
-	profile[78] = 0xD3
-	profile[79] = 0x2D
+	// --- Tag data ---
+	for i, t := range tags {
+		copy(profile[offsets[i]:], t.data)
+	}
 
 	return profile
+}
+
+// iccPutS15Fixed16 writes a float64 as an ICC s15Fixed16Number (big-endian).
+func iccPutS15Fixed16(b []byte, v float64) {
+	fixed := int32(math.Round(v * 65536))
+	binary.BigEndian.PutUint32(b, uint32(fixed))
+}
+
+// iccXYZTag returns an ICC 'XYZ ' tag for the given XYZ values.
+func iccXYZTag(x, y, z float64) []byte {
+	// 'XYZ ' signature (4) + reserved (4) + one XYZNumber (12) = 20 bytes.
+	data := make([]byte, 20)
+	copy(data[0:4], "XYZ ")
+	iccPutS15Fixed16(data[8:12], x)
+	iccPutS15Fixed16(data[12:16], y)
+	iccPutS15Fixed16(data[16:20], z)
+	return data
+}
+
+// iccTextDescriptionTag returns an ICC 'desc' (textDescriptionType) tag.
+func iccTextDescriptionTag(s string) []byte {
+	ascii := []byte(s)
+	asciiLen := len(ascii) + 1 // includes null terminator
+	// desc: sig(4) + reserved(4) + asciiCount(4) + ascii+null + unicodeCode(4) + unicodeCount(4) + scriptCode(2) + scriptCount(1) + scriptData(67)
+	size := 4 + 4 + 4 + asciiLen + 4 + 4 + 2 + 1 + 67
+	data := make([]byte, size)
+	copy(data[0:4], "desc")
+	binary.BigEndian.PutUint32(data[8:12], uint32(asciiLen))
+	copy(data[12:12+len(ascii)], ascii)
+	// Remaining fields (unicode, scriptcode) are zero = not present.
+	return data
+}
+
+// iccTextTag returns an ICC 'text' (textType) tag.
+func iccTextTag(s string) []byte {
+	ascii := []byte(s)
+	// text: sig(4) + reserved(4) + string including null.
+	data := make([]byte, 4+4+len(ascii)+1)
+	copy(data[0:4], "text")
+	copy(data[8:], ascii)
+	return data
+}
+
+// iccSRGBCurveTag returns an ICC 'curv' tag with a 1024-entry LUT
+// that represents the sRGB transfer function (IEC 61966-2.1).
+func iccSRGBCurveTag() []byte {
+	const n = 1024
+	// curv: sig(4) + reserved(4) + count(4) + entries(n*2).
+	data := make([]byte, 4+4+4+n*2)
+	copy(data[0:4], "curv")
+	binary.BigEndian.PutUint32(data[8:12], n)
+
+	for i := 0; i < n; i++ {
+		// sRGB forward transfer: linear → encoded is the inverse,
+		// but ICC TRC stores the forward (encoded → linear) direction.
+		// For the ICC TRC, input is the encoded value, output is linear.
+		// The LUT maps index i (0..1023) to linear value as uint16.
+		t := float64(i) / float64(n-1) // encoded sRGB value [0,1]
+		var linear float64
+		if t <= 0.04045 {
+			linear = t / 12.92
+		} else {
+			linear = math.Pow((t+0.055)/1.055, 2.4)
+		}
+		val := uint16(math.Round(linear * 65535))
+		off := 12 + i*2
+		binary.BigEndian.PutUint16(data[off:off+2], val)
+	}
+	return data
 }
 
 // xmlEscape escapes special XML characters.

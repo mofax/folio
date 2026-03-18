@@ -38,10 +38,12 @@ type NamedDest struct {
 
 // absoluteElement is a layout element placed at fixed coordinates.
 type absoluteElement struct {
-	elem      layout.Element
-	x, y      float64
-	width     float64
-	pageIndex int // -1 = last page
+	elem         layout.Element
+	x, y         float64
+	width        float64
+	pageIndex    int // -1 = last page
+	rightAligned bool
+	zIndex       int
 }
 
 // Document is the top-level API for building a PDF.
@@ -175,6 +177,23 @@ func (d *Document) AddAbsolute(e layout.Element, x, y, width float64) {
 	})
 }
 
+// AddAbsoluteRight places a layout element whose right edge is at
+// (pageWidth - rightOffset) on the last page. The X coordinate is adjusted
+// after layout to account for the element's actual width.
+func (d *Document) AddAbsoluteRight(e layout.Element, rightOffset, y, width float64) {
+	d.absolutes = append(d.absolutes, absoluteElement{
+		elem: e, x: rightOffset, y: y, width: width, pageIndex: -1, rightAligned: true,
+	})
+}
+
+// AddAbsoluteWithOpts places an element with full positioning control.
+func (d *Document) AddAbsoluteWithOpts(e layout.Element, x, y, width float64, opts layout.AbsoluteOpts) {
+	d.absolutes = append(d.absolutes, absoluteElement{
+		elem: e, x: x, y: y, width: width,
+		pageIndex: opts.PageIndex, rightAligned: opts.RightAligned, zIndex: opts.ZIndex,
+	})
+}
+
 // AddAbsoluteOnPage places a layout element at (x, y) on a specific
 // layout page (0-indexed). If the page doesn't exist, the element is ignored.
 func (d *Document) AddAbsoluteOnPage(e layout.Element, x, y, width float64, pageIndex int) {
@@ -245,11 +264,11 @@ func (d *Document) buildAllPages() (all []*Page, structTags []layout.StructTagIn
 			r.Add(e)
 		}
 		for _, a := range d.absolutes {
-			if a.pageIndex < 0 {
-				r.AddAbsolute(a.elem, a.x, a.y, a.width)
-			} else {
-				r.AddAbsoluteOnPage(a.elem, a.x, a.y, a.width, a.pageIndex)
-			}
+			r.AddAbsoluteWithOpts(a.elem, a.x, a.y, a.width, layout.AbsoluteOpts{
+				RightAligned: a.rightAligned,
+				ZIndex:       a.zIndex,
+				PageIndex:    a.pageIndex,
+			})
 		}
 		results := r.Render()
 		for _, res := range results {
@@ -392,7 +411,11 @@ func (d *Document) WriteTo(w io.Writer) (int64, error) {
 		}
 	}
 
-	writer := NewWriter("1.7")
+	version := "1.7"
+	if d.pdfA != nil {
+		version = pdfVersionForPdfA(d.pdfA.Level)
+	}
+	writer := NewWriter(version)
 
 	catalog := core.NewPdfDictionary()
 	catalog.Set("Type", core.NewPdfName("Catalog"))

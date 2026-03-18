@@ -75,6 +75,8 @@ type computedStyle struct {
 	Left     *cssLength
 	Right    *cssLength
 	Bottom   *cssLength
+	ZIndex   int  // z-index (default 0; negative = behind normal flow)
+	ZIndexSet bool // true if z-index was explicitly set
 
 	// Flex
 	FlexDirection  string

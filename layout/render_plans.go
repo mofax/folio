@@ -343,9 +343,11 @@ func headingLevel(tag string) int {
 }
 
 // renderAbsolutes lays out and draws absolutely positioned elements
-// onto the appropriate pages using the V2 system.
+// onto the appropriate pages. Elements with negative z-index are
+// prepended (rendered behind normal flow); others are appended (on top).
 func (r *Renderer) renderAbsolutes(pages []PageResult, defaultWidth float64) {
 	lastPage := len(pages) - 1
+
 	for _, item := range r.absolutes {
 		pageIdx := item.pageIndex
 		if pageIdx < 0 {
@@ -364,9 +366,30 @@ func (r *Renderer) renderAbsolutes(pages []PageResult, defaultWidth float64) {
 		area := LayoutArea{Width: layoutWidth, Height: r.pageHeight}
 		plan := item.elem.PlanLayout(area)
 
-		ctx := DrawContext{Stream: page.Stream, Page: page}
-		for _, block := range plan.Blocks {
-			drawBlock(block, item.x, item.y, &ctx, r.tagged, &r.structTags, pageIdx)
+		x := item.x
+		if item.rightAligned {
+			elemWidth := 0.0
+			for _, block := range plan.Blocks {
+				if w := block.X + block.Width; w > elemWidth {
+					elemWidth = w
+				}
+			}
+			x = r.pageWidth - item.x - elemWidth
+		}
+
+		if item.zIndex < 0 {
+			// Render into a temporary stream and prepend to draw behind flow content.
+			bgStream := content.NewStream()
+			bgCtx := DrawContext{Stream: bgStream, Page: page}
+			for _, block := range plan.Blocks {
+				drawBlock(block, x, item.y, &bgCtx, r.tagged, &r.structTags, pageIdx)
+			}
+			page.Stream.PrependBytes(bgStream.Bytes())
+		} else {
+			ctx := DrawContext{Stream: page.Stream, Page: page}
+			for _, block := range plan.Blocks {
+				drawBlock(block, x, item.y, &ctx, r.tagged, &r.structTags, pageIdx)
+			}
 		}
 	}
 }

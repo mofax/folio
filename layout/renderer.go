@@ -66,10 +66,12 @@ type FontEntry struct {
 
 // absoluteItem is an element placed at fixed coordinates, outside normal flow.
 type absoluteItem struct {
-	elem      Element
-	x, y      float64
-	width     float64 // layout width; 0 means use full page content width
-	pageIndex int     // -1 means "current page at time of rendering"
+	elem         Element
+	x, y         float64
+	width        float64 // layout width; 0 means use full page content width
+	pageIndex    int     // -1 means "current page at time of rendering"
+	rightAligned bool    // x is a right-edge offset; final X = pageWidth - x - elementWidth
+	zIndex       int     // negative = render behind normal flow content
 }
 
 // StructTagInfo records a structure tag emitted during rendering.
@@ -287,6 +289,13 @@ func (r *Renderer) Add(e Element) {
 	r.elements = append(r.elements, e)
 }
 
+// AbsoluteOpts configures an absolutely positioned element.
+type AbsoluteOpts struct {
+	RightAligned bool // x is a right-edge offset
+	ZIndex       int  // negative = render behind normal flow
+	PageIndex    int  // -1 = last page
+}
+
 // AddAbsolute places an element at the given (x, y) coordinates on the
 // last page produced by the normal flow. The element does not participate
 // in normal vertical stacking — it is rendered on top of flow content.
@@ -296,6 +305,22 @@ func (r *Renderer) Add(e Element) {
 func (r *Renderer) AddAbsolute(e Element, x, y, width float64) {
 	r.absolutes = append(r.absolutes, absoluteItem{
 		elem: e, x: x, y: y, width: width, pageIndex: -1,
+	})
+}
+
+// AddAbsoluteWithOpts places an element with full positioning control.
+func (r *Renderer) AddAbsoluteWithOpts(e Element, x, y, width float64, opts AbsoluteOpts) {
+	r.absolutes = append(r.absolutes, absoluteItem{
+		elem: e, x: x, y: y, width: width,
+		pageIndex: opts.PageIndex, rightAligned: opts.RightAligned, zIndex: opts.ZIndex,
+	})
+}
+
+// AddAbsoluteRight places an element whose right edge is offset from the
+// right page edge. The final X is computed after layout: pageWidth - rightOffset - elementWidth.
+func (r *Renderer) AddAbsoluteRight(e Element, rightOffset, y, width float64) {
+	r.absolutes = append(r.absolutes, absoluteItem{
+		elem: e, x: rightOffset, y: y, width: width, pageIndex: -1, rightAligned: true,
 	})
 }
 

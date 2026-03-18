@@ -191,6 +191,14 @@ func (d *Div) SetWidthUnit(u UnitValue) *Div {
 	return d
 }
 
+// ClearWidthUnit removes the explicit width, allowing the element to use the
+// full available width from its parent layout area.
+func (d *Div) ClearWidthUnit() {
+	d.widthUnit = nil
+	d.widthPct = 0
+	d.width = 0
+}
+
 // SetMaxWidthUnit sets the max-width as a UnitValue, resolved at layout time.
 func (d *Div) SetMaxWidthUnit(u UnitValue) *Div {
 	d.maxWidthUnit = &u

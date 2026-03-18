@@ -101,11 +101,13 @@ func (d *Document) AddHTML(htmlStr string, opts *foliohtml.Options) error {
 	// Add absolutely positioned elements.
 	for _, abs := range result.Absolutes {
 		d.absolutes = append(d.absolutes, absoluteElement{
-			elem:      abs.Element,
-			x:         abs.X,
-			y:         abs.Y,
-			width:     abs.Width,
-			pageIndex: -1,
+			elem:         abs.Element,
+			x:            abs.X,
+			y:            abs.Y,
+			width:        abs.Width,
+			pageIndex:    -1,
+			rightAligned: abs.RightAligned,
+			zIndex:       abs.ZIndex,
 		})
 	}
 

@@ -136,6 +136,15 @@ func renderHTML(_ js.Value, args []js.Value) any {
 		doc.Add(e)
 	}
 
+	// Add absolutely positioned elements (position: absolute/fixed).
+	for _, abs := range result.Absolutes {
+		doc.AddAbsoluteWithOpts(abs.Element, abs.X, abs.Y, abs.Width, layout.AbsoluteOpts{
+			RightAligned: abs.RightAligned,
+			ZIndex:       abs.ZIndex,
+			PageIndex:    -1,
+		})
+	}
+
 	// Optional watermark (requested by caller, e.g. playground).
 	if settings.Watermark != "" {
 		doc.SetWatermarkConfig(document.WatermarkConfig{
@@ -151,6 +160,8 @@ func renderHTML(_ js.Value, args []js.Value) any {
 
 	// PDF profiles
 	switch settings.PdfProfile {
+	case "pdfa1b":
+		doc.SetPdfA(document.PdfAConfig{Level: document.PdfA1B})
 	case "pdfa2b":
 		doc.SetPdfA(document.PdfAConfig{Level: document.PdfA2B})
 	case "pdfua1":

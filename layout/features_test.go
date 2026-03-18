@@ -801,3 +801,78 @@ func TestFlexColumn_GrowWithNestedMarginTopAuto(t *testing.T) {
 		t.Errorf("bottom Y = %.1f, want ~%.1f (margin-top:auto in grown container)", bottomY, expectedY)
 	}
 }
+
+// --- Text Align ---
+
+func TestParagraph_AlignRight(t *testing.T) {
+	p := NewParagraph("Hi", font.Helvetica, 12)
+	p.SetAlign(AlignRight)
+	plan := p.PlanLayout(LayoutArea{Width: 200, Height: 1000})
+	if len(plan.Blocks) == 0 {
+		t.Fatal("expected blocks")
+	}
+	b := plan.Blocks[0]
+	// Right-aligned: X should be > 0 (pushed right)
+	if b.X < 1 {
+		t.Errorf("AlignRight: X = %.2f, want > 0 (text should be pushed right)", b.X)
+	}
+	t.Logf("AlignRight: X=%.2f, Width=%.2f, areaWidth=200", b.X, b.Width)
+}
+
+func TestParagraph_AlignCenter(t *testing.T) {
+	p := NewParagraph("Hi", font.Helvetica, 12)
+	p.SetAlign(AlignCenter)
+	plan := p.PlanLayout(LayoutArea{Width: 200, Height: 1000})
+	if len(plan.Blocks) == 0 {
+		t.Fatal("expected blocks")
+	}
+	b := plan.Blocks[0]
+	// Center: X should be roughly (200 - textWidth) / 2
+	if b.X < 1 {
+		t.Errorf("AlignCenter: X = %.2f, want > 0 (text should be centered)", b.X)
+	}
+	t.Logf("AlignCenter: X=%.2f, Width=%.2f, areaWidth=200", b.X, b.Width)
+}
+
+func TestFlexRow_TextAlignRight_InWidthChild(t *testing.T) {
+	// When CSS width is used as flex-basis, the Div should NOT double-resolve
+	// the percentage. The converter clears the Div's width so it takes the
+	// full flex-allocated width. Verify text right-aligns within the flex column.
+	p := NewParagraph("Hi", font.Helvetica, 12)
+	p.SetAlign(AlignRight)
+
+	inner := NewDiv()
+	inner.Add(p)
+	// Don't set widthUnit — the converter clears it when width is consumed
+	// as flex-basis. Only the flex-basis determines the column width.
+
+	flex := NewFlex()
+	flex.SetDirection(FlexRow)
+	item := NewFlexItem(inner)
+	item.SetBasisUnit(Pct(45)) // flex-basis from CSS width: 45%
+	flex.AddItem(item)
+
+	plan := flex.PlanLayout(LayoutArea{Width: 600, Height: 1000})
+	if len(plan.Blocks) == 0 {
+		t.Fatal("no blocks")
+	}
+	cb := plan.Blocks[0]
+	t.Logf("Flex container: X=%.1f, Width=%.1f, Children=%d", cb.X, cb.Width, len(cb.Children))
+	// Find the deepest paragraph block (nested: flex → div → paragraph).
+	found := false
+	var walk func(blocks []PlacedBlock, depth int)
+	walk = func(blocks []PlacedBlock, depth int) {
+		for _, b := range blocks {
+			t.Logf("%*sBlock: X=%.2f, Y=%.2f, W=%.2f, Tag=%s, Children=%d",
+				depth*2, "", b.X, b.Y, b.Width, b.Tag, len(b.Children))
+			if b.Tag == "P" && b.X > 200 {
+				found = true
+			}
+			walk(b.Children, depth+1)
+		}
+	}
+	walk(cb.Children, 1)
+	if !found {
+		t.Error("text-align: right did not push text to right edge of 270pt flex column")
+	}
+}

@@ -113,10 +113,12 @@ type PageConfig struct {
 // AbsoluteItem represents an element removed from normal flow via
 // position:absolute or position:fixed.
 type AbsoluteItem struct {
-	Element layout.Element
-	X, Y    float64 // X from left edge, Y from top in PDF coordinates (bottom-left origin)
-	Width   float64
-	Fixed   bool // position:fixed (render on every page)
+	Element      layout.Element
+	X, Y         float64 // X from left edge, Y from top in PDF coordinates (bottom-left origin)
+	Width        float64
+	Fixed        bool // position:fixed (render on every page)
+	RightAligned bool // true when positioned with CSS right (X is right-edge offset)
+	ZIndex       int  // z-index: negative = render behind normal flow
 }
 
 // ConvertFull parses an HTML string and returns both normal-flow elements
@@ -509,7 +511,10 @@ func (c *converter) convertElement(n *html.Node, parentStyle computedStyle) []la
 			if style.Left != nil {
 				item.X = style.Left.toPoints(c.opts.PageWidth, style.FontSize)
 			} else if style.Right != nil {
-				item.X = c.opts.PageWidth - style.Right.toPoints(c.opts.PageWidth, style.FontSize)
+				// Store the right offset; the renderer will subtract the
+				// element's laid-out width to get the final X position.
+				item.X = style.Right.toPoints(c.opts.PageWidth, style.FontSize)
+				item.RightAligned = true
 			}
 			if style.Top != nil {
 				// CSS top → PDF y: page_height - top
@@ -520,6 +525,7 @@ func (c *converter) convertElement(n *html.Node, parentStyle computedStyle) []la
 			if style.Width != nil {
 				item.Width = style.Width.toPoints(c.opts.PageWidth, style.FontSize)
 			}
+			item.ZIndex = style.ZIndex
 			c.absolutes = append(c.absolutes, item)
 		}
 		return nil // don't add to normal flow
@@ -2337,8 +2343,20 @@ func (c *converter) convertFlex(n *html.Node, style computedStyle) []layout.Elem
 
 		// CSS width on a flex child acts as flex-basis (when flex-basis is not set).
 		effectiveBasis := childStyle.FlexBasis
+		widthUsedAsBasis := false
 		if effectiveBasis == nil && childStyle.Width != nil {
 			effectiveBasis = childStyle.Width
+			widthUsedAsBasis = true
+		}
+
+		// When CSS width is consumed as flex-basis, clear the Div's own width
+		// to prevent double-resolution: the flex algorithm already allocates
+		// the correct width, so the Div should fill its flex-allocated area
+		// rather than re-resolving the percentage against that area.
+		if widthUsedAsBasis {
+			if d, ok := elem.(*layout.Div); ok {
+				d.ClearWidthUnit()
+			}
 		}
 
 		// Check if child has any margin (including negative) that needs FlexItem handling.
@@ -3019,6 +3037,11 @@ func (c *converter) applyProperty(prop, val string, style *computedStyle) {
 		style.Right = parseLength(val)
 	case "bottom":
 		style.Bottom = parseLength(val)
+	case "z-index":
+		if v, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+			style.ZIndex = v
+			style.ZIndexSet = true
+		}
 
 	// Box shadow
 	case "box-shadow":

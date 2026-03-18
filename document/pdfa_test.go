@@ -207,3 +207,137 @@ func TestPdfAOutputCondition(t *testing.T) {
 		t.Error("expected custom output condition identifier")
 	}
 }
+
+func TestPdfA1bBasic(t *testing.T) {
+	doc := NewDocument(PageSizeLetter)
+	doc.Info.Title = "PDF/A-1b Test"
+	doc.SetPdfA(PdfAConfig{Level: PdfA1B})
+	doc.AddPage()
+
+	var buf bytes.Buffer
+	if _, err := doc.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo failed: %v", err)
+	}
+
+	pdf := buf.String()
+
+	// Must use PDF 1.4 header.
+	if !strings.HasPrefix(pdf, "%PDF-1.4") {
+		t.Error("expected PDF 1.4 header for PDF/A-1b")
+	}
+
+	// Must have part 1 identification.
+	if !strings.Contains(pdf, "<pdfaid:part>1</pdfaid:part>") {
+		t.Error("expected PDF/A part 1")
+	}
+	if !strings.Contains(pdf, "<pdfaid:conformance>B</pdfaid:conformance>") {
+		t.Error("expected PDF/A conformance B")
+	}
+
+	// Must have output intent and metadata.
+	if !strings.Contains(pdf, "/OutputIntents") {
+		t.Error("expected /OutputIntents in catalog")
+	}
+	if !strings.Contains(pdf, "/Metadata") {
+		t.Error("expected /Metadata in catalog")
+	}
+}
+
+func TestPdfA1aEnablesTagging(t *testing.T) {
+	doc := NewDocument(PageSizeLetter)
+	doc.Info.Title = "Tagged PDF/A-1a"
+	doc.SetPdfA(PdfAConfig{Level: PdfA1A})
+
+	if !doc.tagged {
+		t.Error("PDF/A-1a should enable tagged PDF automatically")
+	}
+}
+
+func TestPdfA1bForbidsTransparency(t *testing.T) {
+	doc := NewDocument(PageSizeLetter)
+	doc.Info.Title = "Transparency Test"
+	doc.SetPdfA(PdfAConfig{Level: PdfA1B})
+
+	p := doc.AddPage()
+	p.SetOpacity(0.5) // this adds an ExtGState
+
+	var buf bytes.Buffer
+	_, err := doc.WriteTo(&buf)
+	if err == nil {
+		t.Error("expected validation error for transparency in PDF/A-1b")
+	}
+	if err != nil && !strings.Contains(err.Error(), "transparency") {
+		t.Errorf("expected transparency error, got: %v", err)
+	}
+}
+
+func TestPdfA2bAllowsTransparency(t *testing.T) {
+	doc := NewDocument(PageSizeLetter)
+	doc.Info.Title = "Transparency OK"
+	doc.SetPdfA(PdfAConfig{Level: PdfA2B})
+
+	p := doc.AddPage()
+	p.SetOpacity(0.5)
+
+	var buf bytes.Buffer
+	_, err := doc.WriteTo(&buf)
+	if err != nil {
+		t.Fatalf("PDF/A-2b should allow transparency, got: %v", err)
+	}
+}
+
+func TestPdfA1bQpdfCheck(t *testing.T) {
+	doc := NewDocument(PageSizeLetter)
+	doc.Info.Title = "PDF/A-1b qpdf Test"
+	doc.SetPdfA(PdfAConfig{Level: PdfA1B})
+	doc.AddPage()
+
+	var buf bytes.Buffer
+	if _, err := doc.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo failed: %v", err)
+	}
+
+	runQpdfCheck(t, buf.Bytes())
+}
+
+func TestSRGBICCProfileValid(t *testing.T) {
+	profile := srgbICCProfile()
+
+	// Profile must be larger than the old 128-byte stub.
+	if len(profile) < 2000 {
+		t.Errorf("expected full ICC profile > 2KB, got %d bytes", len(profile))
+	}
+
+	// Verify header fields.
+	if string(profile[36:40]) != "acsp" {
+		t.Error("missing 'acsp' signature in ICC header")
+	}
+	if string(profile[12:16]) != "mntr" {
+		t.Error("expected 'mntr' device class")
+	}
+	if string(profile[16:20]) != "RGB " {
+		t.Error("expected 'RGB ' color space")
+	}
+
+	// Verify tag count (should be 9).
+	tagCount := int(profile[128])<<24 | int(profile[129])<<16 | int(profile[130])<<8 | int(profile[131])
+	if tagCount != 9 {
+		t.Errorf("expected 9 tags, got %d", tagCount)
+	}
+}
+
+func TestPdfA2bUsesVersion17(t *testing.T) {
+	doc := NewDocument(PageSizeLetter)
+	doc.Info.Title = "Version Test"
+	doc.SetPdfA(PdfAConfig{Level: PdfA2B})
+	doc.AddPage()
+
+	var buf bytes.Buffer
+	if _, err := doc.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo failed: %v", err)
+	}
+
+	if !strings.HasPrefix(buf.String(), "%PDF-1.7") {
+		t.Error("expected PDF 1.7 for PDF/A-2b")
+	}
+}

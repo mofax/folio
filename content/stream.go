@@ -490,6 +490,17 @@ func (s *Stream) ReplaceInBytes(old, new string) {
 	s.buf.Write(data)
 }
 
+// AppendBytes appends raw content stream bytes after the existing content.
+func (s *Stream) AppendBytes(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	if s.buf.Len() > 0 {
+		s.buf.WriteByte('\n')
+	}
+	s.buf.Write(data)
+}
+
 // Bytes returns the content stream as raw bytes, suitable for
 // embedding in a PdfStream.
 func (s *Stream) Bytes() []byte {
