@@ -34,19 +34,26 @@ type GridPlacement struct {
 }
 
 // Grid is a container that lays out children using CSS Grid semantics.
-// It implements Element and Measurable.
+// It implements Element, Measurable, and HeightSettable.
 type Grid struct {
-	children     []Element
-	templateCols []GridTrack
-	templateRows []GridTrack
-	rowGap       float64
-	colGap       float64
-	placements   []GridPlacement // per-child placement; index matches children
-	padding      Padding
-	borders      CellBorders
-	background   *Color
-	spaceBefore  float64
-	spaceAfter   float64
+	children       []Element
+	templateCols   []GridTrack
+	templateRows   []GridTrack
+	autoRows       []GridTrack // implicit row sizing from grid-auto-rows
+	templateAreas  [][]string  // named grid areas, e.g. [["header","header"],["sidebar","content"]]
+	rowGap         float64
+	colGap         float64
+	placements     []GridPlacement // per-child placement; index matches children
+	padding        Padding
+	borders        CellBorders
+	background     *Color
+	spaceBefore    float64
+	spaceAfter     float64
+	heightUnit     *UnitValue     // forced height (HeightSettable)
+	justifyItems   AlignItems     // horizontal alignment of items within cells
+	alignItems     AlignItems     // vertical alignment of items within cells
+	justifyContent JustifyContent // distribute columns within container
+	alignContent   JustifyContent // distribute rows within container
 }
 
 // NewGrid creates an empty grid container.
@@ -71,6 +78,18 @@ func (g *Grid) SetTemplateColumns(tracks []GridTrack) *Grid {
 // SetTemplateRows sets the row track definitions.
 func (g *Grid) SetTemplateRows(tracks []GridTrack) *Grid {
 	g.templateRows = tracks
+	return g
+}
+
+// SetAutoRows sets the implicit row track definitions (grid-auto-rows).
+func (g *Grid) SetAutoRows(tracks []GridTrack) *Grid {
+	g.autoRows = tracks
+	return g
+}
+
+// SetTemplateAreas sets named grid areas for area-based placement.
+func (g *Grid) SetTemplateAreas(areas [][]string) *Grid {
+	g.templateAreas = areas
 	return g
 }
 
@@ -116,6 +135,27 @@ func (g *Grid) SetSpaceBefore(pts float64) *Grid { g.spaceBefore = pts; return g
 
 // SetSpaceAfter sets extra vertical space after the container.
 func (g *Grid) SetSpaceAfter(pts float64) *Grid { g.spaceAfter = pts; return g }
+
+// ForceHeight implements HeightSettable.
+func (g *Grid) ForceHeight(u UnitValue) { g.heightUnit = &u }
+
+// ClearHeightUnit removes the forced height.
+func (g *Grid) ClearHeightUnit() { g.heightUnit = nil }
+
+// HasExplicitHeight returns true if the Grid has an explicit CSS height set.
+func (g *Grid) HasExplicitHeight() bool { return g.heightUnit != nil }
+
+// SetJustifyItems sets horizontal alignment of items within their cells.
+func (g *Grid) SetJustifyItems(a AlignItems) *Grid { g.justifyItems = a; return g }
+
+// SetAlignItems sets vertical alignment of items within their cells.
+func (g *Grid) SetAlignItems(a AlignItems) *Grid { g.alignItems = a; return g }
+
+// SetJustifyContent sets distribution of columns within the container.
+func (g *Grid) SetJustifyContent(j JustifyContent) *Grid { g.justifyContent = j; return g }
+
+// SetAlignContent sets distribution of rows within the container.
+func (g *Grid) SetAlignContent(j JustifyContent) *Grid { g.alignContent = j; return g }
 
 // cssGridCell records a child's resolved position within the grid.
 type cssGridCell struct {
@@ -193,6 +233,19 @@ func (g *Grid) PlanLayout(area LayoutArea) LayoutPlan {
 	}
 
 	innerWidth := area.Width - g.padding.Left - g.padding.Right
+	innerHeight := area.Height - g.padding.Top - g.padding.Bottom - g.spaceBefore - g.spaceAfter
+	if innerHeight < 0 {
+		innerHeight = 0
+	}
+
+	// If the grid container has an explicit height, use it.
+	if g.heightUnit != nil {
+		resolvedH := g.heightUnit.Resolve(area.Height)
+		innerHeight = resolvedH - g.padding.Top - g.padding.Bottom
+		if innerHeight < 0 {
+			innerHeight = 0
+		}
+	}
 
 	numCols := len(g.templateCols)
 	if numCols == 0 {
@@ -262,7 +315,7 @@ func (g *Grid) PlanLayout(area LayoutArea) LayoutPlan {
 		}
 	}
 
-	// Also apply explicit row template heights where specified.
+	// Apply explicit row template heights where specified.
 	for i, t := range g.templateRows {
 		if i >= numRows {
 			break
@@ -276,6 +329,26 @@ func (g *Grid) PlanLayout(area LayoutArea) LayoutPlan {
 			h := t.Value / 100 * area.Height
 			if h > rowHeights[i] {
 				rowHeights[i] = h
+			}
+		}
+	}
+
+	// Apply auto-rows minimums for implicit rows (rows beyond templateRows).
+	if len(g.autoRows) > 0 {
+		for i := len(g.templateRows); i < numRows; i++ {
+			// Cycle through autoRows tracks.
+			autoIdx := (i - len(g.templateRows)) % len(g.autoRows)
+			t := g.autoRows[autoIdx]
+			switch t.Type {
+			case GridTrackPx:
+				if t.Value > rowHeights[i] {
+					rowHeights[i] = t.Value
+				}
+			case GridTrackPercent:
+				h := t.Value / 100 * area.Height
+				if h > rowHeights[i] {
+					rowHeights[i] = h
+				}
 			}
 		}
 	}
@@ -302,26 +375,365 @@ func (g *Grid) PlanLayout(area LayoutArea) LayoutPlan {
 		curX += colWidths[c]
 	}
 
-	// Step 5: Position all cell blocks.
+	// Apply justify-content: distribute columns within container if total < innerWidth.
+	totalColWidth := 0.0
+	for _, w := range colWidths {
+		totalColWidth += w
+	}
+	if numCols > 1 {
+		totalColWidth += g.colGap * float64(numCols-1)
+	}
+	if g.justifyContent != JustifyFlexStart && totalColWidth < innerWidth-0.01 {
+		g.applyJustifyContent(colX, colWidths, numCols, innerWidth)
+	}
+
+	// Apply align-content: distribute rows within container if total < innerHeight
+	// and container has explicit height.
+	totalRowHeight := 0.0
+	for _, h := range rowHeights {
+		totalRowHeight += h
+	}
+	if numRows > 1 {
+		totalRowHeight += g.rowGap * float64(numRows-1)
+	}
+	if g.alignContent != JustifyFlexStart && g.heightUnit != nil && totalRowHeight < innerHeight-0.01 {
+		g.applyAlignContent(rowY, rowHeights, numRows, innerHeight)
+	}
+
+	// Phase 4: Page break support — check if grid overflows area.Height.
+	totalH := curY + g.padding.Bottom
+	if g.heightUnit != nil {
+		totalH = g.heightUnit.Resolve(area.Height)
+	}
+	consumed := g.spaceBefore + totalH + g.spaceAfter
+
+	// Check for overflow: find last row that fits completely.
+	maxContentH := area.Height - g.spaceBefore - g.spaceAfter
+	if totalH > maxContentH+0.01 {
+		return g.buildOverflowResult(cells, cellPlans, colX, colWidths, rowY, rowHeights, numRows, numCols, area, maxContentH)
+	}
+
+	// Step 5: Position all cell blocks with alignment.
+	allChildren := g.positionCells(cells, cellPlans, colX, colWidths, rowY, rowHeights)
+
+	containerBlock := g.makeContainerBlock(allChildren, totalH, area.Width)
+
+	return LayoutPlan{Status: LayoutFull, Consumed: consumed, Blocks: []PlacedBlock{containerBlock}}
+}
+
+// positionCells places all cell blocks with item-level alignment.
+func (g *Grid) positionCells(cells []cssGridCell, cellPlans []LayoutPlan, colX, colWidths []float64, rowY, rowHeights []float64) []PlacedBlock {
 	var allChildren []PlacedBlock
 	for i, cell := range cells {
 		plan := cellPlans[i]
 		x := colX[cell.colStart]
 		y := rowY[cell.rowStart]
+
+		// Compute cell dimensions for alignment.
+		cellW := g.cellWidth(cell, colWidths)
+		cellH := g.cellHeight(cell, rowHeights)
+
+		// Item dimensions from the plan.
+		itemW := maxBlockWidth(plan.Blocks)
+		itemH := plan.Consumed
+
+		// justify-items: horizontal alignment within cell.
+		xOffset := g.computeItemAlignOffset(g.justifyItems, cellW, itemW)
+		// align-items: vertical alignment within cell.
+		yOffset := g.computeItemAlignOffset(g.alignItems, cellH, itemH)
+
 		for _, block := range plan.Blocks {
 			b := block
-			b.X += x
-			b.Y += y
+			b.X += x + xOffset
+			b.Y += y + yOffset
 			allChildren = append(allChildren, b)
 		}
 	}
+	return allChildren
+}
 
-	totalH := curY + g.padding.Bottom
+// computeItemAlignOffset computes alignment offset for an item within its cell.
+func (g *Grid) computeItemAlignOffset(align AlignItems, cellSize, itemSize float64) float64 {
+	switch align {
+	case CrossAlignEnd:
+		off := cellSize - itemSize
+		if off < 0 {
+			return 0
+		}
+		return off
+	case CrossAlignCenter:
+		off := (cellSize - itemSize) / 2
+		if off < 0 {
+			return 0
+		}
+		return off
+	default: // CrossAlignStretch, CrossAlignStart
+		return 0
+	}
+}
+
+// cellHeight returns the total height available for a cell spanning rows.
+func (g *Grid) cellHeight(cell cssGridCell, rowHeights []float64) float64 {
+	h := 0.0
+	for r := cell.rowStart; r < cell.rowEnd; r++ {
+		if r < len(rowHeights) {
+			h += rowHeights[r]
+		}
+	}
+	// Add inter-row gaps within the span.
+	gaps := cell.rowEnd - cell.rowStart - 1
+	if gaps > 0 {
+		h += g.rowGap * float64(gaps)
+	}
+	return h
+}
+
+// applyJustifyContent redistributes column X-positions based on justify-content.
+func (g *Grid) applyJustifyContent(colX, colWidths []float64, numCols int, innerWidth float64) {
+	totalColWidth := 0.0
+	for _, w := range colWidths {
+		totalColWidth += w
+	}
+
+	freeSpace := innerWidth - totalColWidth
+	if numCols > 1 {
+		freeSpace -= g.colGap * float64(numCols-1)
+	}
+	if freeSpace <= 0 {
+		return
+	}
+
+	switch g.justifyContent {
+	case JustifyFlexEnd:
+		offset := freeSpace
+		curX := g.padding.Left + offset
+		for c := 0; c < numCols; c++ {
+			if c > 0 {
+				curX += g.colGap
+			}
+			colX[c] = curX
+			curX += colWidths[c]
+		}
+	case JustifyCenter:
+		offset := freeSpace / 2
+		curX := g.padding.Left + offset
+		for c := 0; c < numCols; c++ {
+			if c > 0 {
+				curX += g.colGap
+			}
+			colX[c] = curX
+			curX += colWidths[c]
+		}
+	case JustifySpaceBetween:
+		if numCols <= 1 {
+			return
+		}
+		gap := (innerWidth - totalColWidth) / float64(numCols-1)
+		curX := g.padding.Left
+		for c := 0; c < numCols; c++ {
+			if c > 0 {
+				curX += gap
+			}
+			colX[c] = curX
+			curX += colWidths[c]
+		}
+	case JustifySpaceAround:
+		if numCols == 0 {
+			return
+		}
+		gap := (innerWidth - totalColWidth) / float64(numCols)
+		curX := g.padding.Left + gap/2
+		for c := 0; c < numCols; c++ {
+			if c > 0 {
+				curX += gap
+			}
+			colX[c] = curX
+			curX += colWidths[c]
+		}
+	case JustifySpaceEvenly:
+		if numCols == 0 {
+			return
+		}
+		gap := (innerWidth - totalColWidth) / float64(numCols+1)
+		curX := g.padding.Left + gap
+		for c := 0; c < numCols; c++ {
+			if c > 0 {
+				curX += gap
+			}
+			colX[c] = curX
+			curX += colWidths[c]
+		}
+	}
+}
+
+// applyAlignContent redistributes row Y-positions based on align-content.
+func (g *Grid) applyAlignContent(rowY, rowHeights []float64, numRows int, innerHeight float64) {
+	totalRowHeight := 0.0
+	for _, h := range rowHeights {
+		totalRowHeight += h
+	}
+
+	freeSpace := innerHeight - totalRowHeight
+	if numRows > 1 {
+		freeSpace -= g.rowGap * float64(numRows-1)
+	}
+	if freeSpace <= 0 {
+		return
+	}
+
+	switch g.alignContent {
+	case JustifyFlexEnd:
+		offset := freeSpace
+		curY := g.padding.Top + offset
+		for r := 0; r < numRows; r++ {
+			if r > 0 {
+				curY += g.rowGap
+			}
+			rowY[r] = curY
+			curY += rowHeights[r]
+		}
+	case JustifyCenter:
+		offset := freeSpace / 2
+		curY := g.padding.Top + offset
+		for r := 0; r < numRows; r++ {
+			if r > 0 {
+				curY += g.rowGap
+			}
+			rowY[r] = curY
+			curY += rowHeights[r]
+		}
+	case JustifySpaceBetween:
+		if numRows <= 1 {
+			return
+		}
+		gap := (innerHeight - totalRowHeight) / float64(numRows-1)
+		curY := g.padding.Top
+		for r := 0; r < numRows; r++ {
+			if r > 0 {
+				curY += gap
+			}
+			rowY[r] = curY
+			curY += rowHeights[r]
+		}
+	case JustifySpaceAround:
+		if numRows == 0 {
+			return
+		}
+		gap := (innerHeight - totalRowHeight) / float64(numRows)
+		curY := g.padding.Top + gap/2
+		for r := 0; r < numRows; r++ {
+			if r > 0 {
+				curY += gap
+			}
+			rowY[r] = curY
+			curY += rowHeights[r]
+		}
+	case JustifySpaceEvenly:
+		if numRows == 0 {
+			return
+		}
+		gap := (innerHeight - totalRowHeight) / float64(numRows+1)
+		curY := g.padding.Top + gap
+		for r := 0; r < numRows; r++ {
+			if r > 0 {
+				curY += gap
+			}
+			rowY[r] = curY
+			curY += rowHeights[r]
+		}
+	}
+}
+
+// buildOverflowResult handles page-break support by splitting at row boundaries.
+func (g *Grid) buildOverflowResult(cells []cssGridCell, cellPlans []LayoutPlan,
+	colX, colWidths []float64, rowY, rowHeights []float64,
+	numRows, numCols int, area LayoutArea, maxContentH float64) LayoutPlan {
+
+	// Find the last row that fits completely within maxContentH.
+	lastFitRow := -1
+	for r := 0; r < numRows; r++ {
+		rowBottom := rowY[r] + rowHeights[r]
+		if rowBottom <= maxContentH+0.01 {
+			lastFitRow = r
+		} else {
+			break
+		}
+	}
+
+	// If not even the first row fits and there's nothing before it, force it.
+	if lastFitRow < 0 {
+		// Force first row: return everything as full (same as flex behavior).
+		allChildren := g.positionCells(cells, cellPlans, colX, colWidths, rowY, rowHeights)
+		totalH := rowY[0] + rowHeights[0] + g.padding.Bottom
+		consumed := g.spaceBefore + totalH + g.spaceAfter
+		containerBlock := g.makeContainerBlock(allChildren, totalH, area.Width)
+		return LayoutPlan{Status: LayoutFull, Consumed: consumed, Blocks: []PlacedBlock{containerBlock}}
+	}
+
+	// Collect blocks for fitted rows only.
+	var fittedChildren []PlacedBlock
+	for i, cell := range cells {
+		if cell.rowEnd-1 > lastFitRow {
+			continue // This cell extends beyond the fitted rows.
+		}
+		plan := cellPlans[i]
+		x := colX[cell.colStart]
+		y := rowY[cell.rowStart]
+		cellW := g.cellWidth(cell, colWidths)
+		cellH := g.cellHeight(cell, rowHeights)
+		itemW := maxBlockWidth(plan.Blocks)
+		itemH := plan.Consumed
+		xOffset := g.computeItemAlignOffset(g.justifyItems, cellW, itemW)
+		yOffset := g.computeItemAlignOffset(g.alignItems, cellH, itemH)
+		for _, block := range plan.Blocks {
+			b := block
+			b.X += x + xOffset
+			b.Y += y + yOffset
+			fittedChildren = append(fittedChildren, b)
+		}
+	}
+
+	totalH := rowY[lastFitRow] + rowHeights[lastFitRow] + g.padding.Bottom
 	consumed := g.spaceBefore + totalH + g.spaceAfter
+	containerBlock := g.makeContainerBlock(fittedChildren, totalH, area.Width)
 
-	containerBlock := g.makeContainerBlock(allChildren, totalH, area.Width)
+	// Build overflow Grid with remaining rows' children.
+	overflowGrid := NewGrid()
+	overflowGrid.templateCols = g.templateCols
+	overflowGrid.templateRows = nil // overflow doesn't carry forward explicit rows
+	overflowGrid.autoRows = g.autoRows
+	overflowGrid.rowGap = g.rowGap
+	overflowGrid.colGap = g.colGap
+	overflowGrid.padding = g.padding
+	overflowGrid.borders = g.borders
+	overflowGrid.background = g.background
+	overflowGrid.spaceAfter = g.spaceAfter
+	overflowGrid.justifyItems = g.justifyItems
+	overflowGrid.alignItems = g.alignItems
+	overflowGrid.justifyContent = g.justifyContent
+	overflowGrid.alignContent = g.alignContent
 
-	return LayoutPlan{Status: LayoutFull, Consumed: consumed, Blocks: []PlacedBlock{containerBlock}}
+	// Add children from overflow rows with adjusted placements.
+	overflowStartRow := lastFitRow + 1
+	for i, cell := range cells {
+		if cell.rowStart < overflowStartRow {
+			continue // Already fitted.
+		}
+		_ = i // use original child
+		overflowGrid.children = append(overflowGrid.children, g.children[cell.childIdx])
+		overflowGrid.placements = append(overflowGrid.placements, GridPlacement{
+			ColStart: cell.colStart + 1, // back to 1-based
+			ColEnd:   cell.colEnd + 1,
+			RowStart: cell.rowStart - overflowStartRow + 1,
+			RowEnd:   cell.rowEnd - overflowStartRow + 1,
+		})
+	}
+
+	if len(overflowGrid.children) == 0 {
+		return LayoutPlan{Status: LayoutFull, Consumed: consumed, Blocks: []PlacedBlock{containerBlock}}
+	}
+
+	return LayoutPlan{Status: LayoutPartial, Consumed: consumed, Blocks: []PlacedBlock{containerBlock}, Overflow: overflowGrid}
 }
 
 // resolveColumnWidths converts track definitions to absolute widths.

@@ -85,16 +85,23 @@ type computedStyle struct {
 	FlexShrink     float64
 	FlexBasis      *cssLength
 	AlignSelf      string // "auto", "flex-start", "flex-end", "center", "stretch"
+	AlignContent   string // "flex-start", "flex-end", "center", "space-between", "space-around", "stretch"
+	JustifyItems   string // "start", "end", "center", "stretch" (grid only)
 	Gap            float64
 
 	// Grid
-	GridTemplateColumns string // raw CSS value e.g. "1fr 1fr 1fr", "200px 1fr 2fr"
-	GridTemplateRows    string // raw CSS value
-	GridColumnStart     int    // 1-based line number, 0 = auto
-	GridColumnEnd       int    // 1-based line number, 0 = auto
-	GridRowStart        int    // 1-based line number, 0 = auto
-	GridRowEnd          int    // 1-based line number, 0 = auto
-	GridAutoFlow        string // "row" (default)
+	GridTemplateColumns string     // raw CSS value e.g. "1fr 1fr 1fr", "200px 1fr 2fr"
+	GridTemplateRows    string     // raw CSS value
+	GridColumnStart     int        // 1-based line number, 0 = auto
+	GridColumnEnd       int        // 1-based line number, 0 = auto
+	GridRowStart        int        // 1-based line number, 0 = auto
+	GridRowEnd          int        // 1-based line number, 0 = auto
+	GridAutoFlow        string     // "row" (default)
+	GridAutoRows        string     // raw CSS value for implicit row sizing
+	GridTemplateAreas   [][]string // parsed grid-template-areas, e.g. [["header","header"],["sidebar","content"]]
+	GridArea            string     // grid-area name for placement
+	RowGap              float64    // row-gap (takes priority over Gap for grid)
+	GridColumnGap       float64    // column-gap for grid (takes priority over Gap for grid)
 
 	// List
 	ListStyleType string

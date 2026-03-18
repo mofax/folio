@@ -24,9 +24,83 @@ func (c *converter) convertGrid(n *html.Node, style computedStyle) []layout.Elem
 		grid.SetTemplateRows(parseGridTracks(style.GridTemplateRows, style.FontSize))
 	}
 
-	// Gap.
-	if style.Gap > 0 {
-		grid.SetGap(style.Gap, style.Gap)
+	// Parse grid-auto-rows.
+	if style.GridAutoRows != "" {
+		grid.SetAutoRows(parseGridTracks(style.GridAutoRows, style.FontSize))
+	}
+
+	// Parse grid-template-areas.
+	if len(style.GridTemplateAreas) > 0 {
+		grid.SetTemplateAreas(style.GridTemplateAreas)
+	}
+
+	// Gap: prefer specific RowGap/GridColumnGap over the Gap shorthand.
+	rowGap := style.Gap
+	colGap := style.Gap
+	if style.RowGap > 0 {
+		rowGap = style.RowGap
+	}
+	if style.GridColumnGap > 0 {
+		colGap = style.GridColumnGap
+	}
+	if rowGap > 0 || colGap > 0 {
+		grid.SetGap(rowGap, colGap)
+	}
+
+	// Alignment: justify-items.
+	switch style.JustifyItems {
+	case "start":
+		grid.SetJustifyItems(layout.CrossAlignStart)
+	case "end":
+		grid.SetJustifyItems(layout.CrossAlignEnd)
+	case "center":
+		grid.SetJustifyItems(layout.CrossAlignCenter)
+	default:
+		grid.SetJustifyItems(layout.CrossAlignStretch)
+	}
+
+	// Alignment: align-items.
+	switch style.AlignItems {
+	case "start", "flex-start":
+		grid.SetAlignItems(layout.CrossAlignStart)
+	case "end", "flex-end":
+		grid.SetAlignItems(layout.CrossAlignEnd)
+	case "center":
+		grid.SetAlignItems(layout.CrossAlignCenter)
+	default:
+		grid.SetAlignItems(layout.CrossAlignStretch)
+	}
+
+	// Alignment: justify-content.
+	switch style.JustifyContent {
+	case "flex-end", "end":
+		grid.SetJustifyContent(layout.JustifyFlexEnd)
+	case "center":
+		grid.SetJustifyContent(layout.JustifyCenter)
+	case "space-between":
+		grid.SetJustifyContent(layout.JustifySpaceBetween)
+	case "space-around":
+		grid.SetJustifyContent(layout.JustifySpaceAround)
+	case "space-evenly":
+		grid.SetJustifyContent(layout.JustifySpaceEvenly)
+	default:
+		grid.SetJustifyContent(layout.JustifyFlexStart)
+	}
+
+	// Alignment: align-content.
+	switch style.AlignContent {
+	case "flex-end", "end":
+		grid.SetAlignContent(layout.JustifyFlexEnd)
+	case "center":
+		grid.SetAlignContent(layout.JustifyCenter)
+	case "space-between":
+		grid.SetAlignContent(layout.JustifySpaceBetween)
+	case "space-around":
+		grid.SetAlignContent(layout.JustifySpaceAround)
+	case "space-evenly":
+		grid.SetAlignContent(layout.JustifySpaceEvenly)
+	default:
+		grid.SetAlignContent(layout.JustifyFlexStart)
 	}
 
 	// Container styling.
@@ -43,6 +117,12 @@ func (c *converter) convertGrid(n *html.Node, style computedStyle) []layout.Elem
 	}
 	if style.BackgroundColor != nil {
 		grid.SetBackground(*style.BackgroundColor)
+	}
+	if style.MarginTop > 0 {
+		grid.SetSpaceBefore(style.MarginTop)
+	}
+	if style.MarginBottom > 0 {
+		grid.SetSpaceAfter(style.MarginBottom)
 	}
 
 	// Add children and their placements.
@@ -61,9 +141,20 @@ func (c *converter) convertGrid(n *html.Node, style computedStyle) []layout.Elem
 		for _, elem := range childElems {
 			grid.AddChild(elem)
 
-			// Set placement if the child has explicit grid positioning.
-			if childStyle.GridColumnStart != 0 || childStyle.GridColumnEnd != 0 ||
+			// Resolve grid-area to explicit placement if the child has a named area.
+			if childStyle.GridArea != "" && len(style.GridTemplateAreas) > 0 {
+				colStart, colEnd, rowStart, rowEnd := resolveGridArea(childStyle.GridArea, style.GridTemplateAreas)
+				if colStart > 0 {
+					grid.SetPlacement(childIdx, layout.GridPlacement{
+						ColStart: colStart,
+						ColEnd:   colEnd,
+						RowStart: rowStart,
+						RowEnd:   rowEnd,
+					})
+				}
+			} else if childStyle.GridColumnStart != 0 || childStyle.GridColumnEnd != 0 ||
 				childStyle.GridRowStart != 0 || childStyle.GridRowEnd != 0 {
+				// Set placement if the child has explicit grid positioning.
 				grid.SetPlacement(childIdx, layout.GridPlacement{
 					ColStart: childStyle.GridColumnStart,
 					ColEnd:   childStyle.GridColumnEnd,
@@ -76,6 +167,86 @@ func (c *converter) convertGrid(n *html.Node, style computedStyle) []layout.Elem
 	}
 
 	return []layout.Element{grid}
+}
+
+// resolveGridArea looks up a named area in grid-template-areas and returns
+// 1-based ColStart, ColEnd, RowStart, RowEnd. Returns zeros if not found.
+func resolveGridArea(areaName string, areas [][]string) (colStart, colEnd, rowStart, rowEnd int) {
+	minCol, maxCol := -1, -1
+	minRow, maxRow := -1, -1
+
+	for r, row := range areas {
+		for c, name := range row {
+			if name == areaName {
+				if minRow < 0 || r < minRow {
+					minRow = r
+				}
+				if maxRow < 0 || r > maxRow {
+					maxRow = r
+				}
+				if minCol < 0 || c < minCol {
+					minCol = c
+				}
+				if maxCol < 0 || c > maxCol {
+					maxCol = c
+				}
+			}
+		}
+	}
+
+	if minRow < 0 {
+		return 0, 0, 0, 0
+	}
+
+	// Convert to 1-based CSS grid lines.
+	return minCol + 1, maxCol + 2, minRow + 1, maxRow + 2
+}
+
+// parseGridTemplateAreas parses a CSS grid-template-areas value into a 2D string array.
+// Example: `"header header" "sidebar content"` -> [["header","header"],["sidebar","content"]]
+func parseGridTemplateAreas(val string) [][]string {
+	val = strings.TrimSpace(val)
+	if val == "" {
+		return nil
+	}
+
+	var areas [][]string
+	// Split on quoted strings.
+	i := 0
+	for i < len(val) {
+		// Find opening quote.
+		qStart := -1
+		for j := i; j < len(val); j++ {
+			if val[j] == '"' || val[j] == '\'' {
+				qStart = j
+				break
+			}
+		}
+		if qStart < 0 {
+			break
+		}
+		quote := val[qStart]
+		// Find closing quote.
+		qEnd := -1
+		for j := qStart + 1; j < len(val); j++ {
+			if val[j] == quote {
+				qEnd = j
+				break
+			}
+		}
+		if qEnd < 0 {
+			break
+		}
+
+		rowStr := strings.TrimSpace(val[qStart+1 : qEnd])
+		cells := strings.Fields(rowStr)
+		if len(cells) > 0 {
+			areas = append(areas, cells)
+		}
+		i = qEnd + 1
+	}
+
+	return areas
 }
 
 // parseGridTracks parses a CSS grid-template-columns/rows value into GridTrack slices.

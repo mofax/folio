@@ -2829,12 +2829,20 @@ func (c *converter) applyProperty(prop, val string, style *computedStyle) {
 		}
 	case "flex-basis":
 		style.FlexBasis = parseLength(val)
-	case "gap":
-		style.Gap = parseBoxSide(val, style.FontSize)
-	case "grid-gap":
-		style.Gap = parseBoxSide(val, style.FontSize)
+	case "gap", "grid-gap":
+		parts := strings.Fields(strings.TrimSpace(val))
+		if len(parts) == 1 {
+			v := parseBoxSide(parts[0], style.FontSize)
+			style.Gap = v
+			style.RowGap = v
+			style.GridColumnGap = v
+		} else if len(parts) >= 2 {
+			style.RowGap = parseBoxSide(parts[0], style.FontSize)
+			style.GridColumnGap = parseBoxSide(parts[1], style.FontSize)
+			style.Gap = style.RowGap // flex compat: use row-gap value
+		}
 	case "row-gap":
-		style.Gap = parseBoxSide(val, style.FontSize)
+		style.RowGap = parseBoxSide(val, style.FontSize)
 	case "grid-template-columns":
 		style.GridTemplateColumns = strings.TrimSpace(val)
 	case "grid-template-rows":
@@ -2861,6 +2869,16 @@ func (c *converter) applyProperty(prop, val string, style *computedStyle) {
 		}
 	case "grid-auto-flow":
 		style.GridAutoFlow = strings.TrimSpace(strings.ToLower(val))
+	case "grid-auto-rows":
+		style.GridAutoRows = strings.TrimSpace(val)
+	case "grid-template-areas":
+		style.GridTemplateAreas = parseGridTemplateAreas(val)
+	case "grid-area":
+		style.GridArea = strings.TrimSpace(val)
+	case "align-content":
+		style.AlignContent = strings.TrimSpace(strings.ToLower(val))
+	case "justify-items":
+		style.JustifyItems = strings.TrimSpace(strings.ToLower(val))
 	case "page-break-before", "break-before":
 		v := strings.TrimSpace(strings.ToLower(val))
 		switch v {
@@ -3036,7 +3054,9 @@ func (c *converter) applyProperty(prop, val string, style *computedStyle) {
 			style.ColumnCount = v
 		}
 	case "column-gap":
-		style.ColumnGap = parseBoxSide(val, style.FontSize)
+		v := parseBoxSide(val, style.FontSize)
+		style.ColumnGap = v
+		style.GridColumnGap = v
 	case "columns":
 		parts := strings.Fields(strings.TrimSpace(val))
 		for _, p := range parts {
