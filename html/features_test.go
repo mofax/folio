@@ -1266,3 +1266,110 @@ func TestCSSCounterIncrementOnly(t *testing.T) {
 		t.Fatal("expected elements from auto-instantiate counter test")
 	}
 }
+
+// --- Containing-block absolute positioning ---
+
+func TestAbsoluteInsideRelativeParent(t *testing.T) {
+	// An absolute element inside a position:relative parent should be
+	// rendered as an overlay child of the parent, not as a page-level
+	// absolute item.
+	htmlStr := `<div style="position: relative; width: 200px; height: 100px; background: #eee;">
+		<div style="position: absolute; top: 10px; left: 20px; width: 50px;"><p>Abs</p></div>
+	</div>`
+	result, err := ConvertFull(htmlStr, &Options{PageWidth: 612, PageHeight: 792})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The absolute child should NOT appear in the global absolutes list.
+	if len(result.Absolutes) != 0 {
+		t.Errorf("expected 0 global absolutes (child should be overlay), got %d", len(result.Absolutes))
+	}
+	// The parent div should be in normal flow elements.
+	if len(result.Elements) == 0 {
+		t.Fatal("expected normal-flow elements for the relative parent")
+	}
+	// Verify the element renders with positive consumed height.
+	plan := result.Elements[0].PlanLayout(layout.LayoutArea{Width: 400, Height: 1000})
+	if plan.Consumed <= 0 {
+		t.Error("relative parent with absolute child should have positive consumed height")
+	}
+	// Verify the container block has children (the overlay).
+	if len(plan.Blocks) == 0 {
+		t.Fatal("expected placed blocks")
+	}
+	containerBlock := plan.Blocks[0]
+	// The container block should have children: normal flow children
+	// plus the overlay child.
+	foundOverlay := false
+	for _, child := range containerBlock.Children {
+		// Overlay children have X offset that includes padding + CSS left.
+		// CSS left: 20px = 15pt.
+		if child.X >= 14 && child.X <= 16 {
+			foundOverlay = true
+		}
+	}
+	if !foundOverlay {
+		t.Error("expected overlay child with X offset ~15pt (20px CSS left)")
+	}
+}
+
+func TestNestedPositionedAncestors(t *testing.T) {
+	// The nearest positioned ancestor should be used for absolute positioning.
+	htmlStr := `<div style="position: relative; width: 400px; height: 300px;">
+		<div style="position: relative; width: 200px; height: 150px;">
+			<div style="position: absolute; top: 5px; left: 10px;"><p>Inner abs</p></div>
+		</div>
+	</div>`
+	result, err := ConvertFull(htmlStr, &Options{PageWidth: 612, PageHeight: 792})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should not produce any global absolutes.
+	if len(result.Absolutes) != 0 {
+		t.Errorf("expected 0 global absolutes, got %d", len(result.Absolutes))
+	}
+	if len(result.Elements) == 0 {
+		t.Fatal("expected elements")
+	}
+	plan := result.Elements[0].PlanLayout(layout.LayoutArea{Width: 500, Height: 1000})
+	if plan.Consumed <= 0 {
+		t.Error("nested positioned containers should render")
+	}
+}
+
+func TestAbsoluteWithNoPositionedAncestor(t *testing.T) {
+	// Without a positioned ancestor, absolute should fall back to the page
+	// (global absolutes list).
+	htmlStr := `<div style="position: absolute; top: 50px; left: 100px;"><p>Page-level abs</p></div><p>Normal</p>`
+	result, err := ConvertFull(htmlStr, &Options{PageWidth: 612, PageHeight: 792})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Absolutes) == 0 {
+		t.Fatal("expected global absolute item when no positioned ancestor exists")
+	}
+	if len(result.Elements) == 0 {
+		t.Fatal("expected normal-flow elements")
+	}
+}
+
+func TestAbsoluteWithRightInContainingBlock(t *testing.T) {
+	// Test position:absolute with CSS right inside a containing block.
+	htmlStr := `<div style="position: relative; width: 300px; height: 100px;">
+		<div style="position: absolute; top: 0; right: 10px; width: 50px;"><p>Right</p></div>
+	</div>`
+	result, err := ConvertFull(htmlStr, &Options{PageWidth: 612, PageHeight: 792})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Absolutes) != 0 {
+		t.Errorf("expected 0 global absolutes, got %d", len(result.Absolutes))
+	}
+	if len(result.Elements) == 0 {
+		t.Fatal("expected elements")
+	}
+	plan := result.Elements[0].PlanLayout(layout.LayoutArea{Width: 400, Height: 1000})
+	if plan.Consumed <= 0 {
+		t.Error("should render with positive height")
+	}
+}
