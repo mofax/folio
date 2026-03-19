@@ -597,6 +597,18 @@ func (p *Paragraph) PlanLayout(area LayoutArea) LayoutPlan {
 		infos[len(infos)-1].spaceAfter = p.spaceAfter
 	}
 
+	// Compute per-line height: max of text line height and any inline-block heights.
+	lineHeights := make([]float64, len(infos))
+	for i, info := range infos {
+		lh := lineHeight
+		for _, w := range info.words {
+			if w.InlineBlock != nil && w.InlineHeight > lh {
+				lh = w.InlineHeight
+			}
+		}
+		lineHeights[i] = lh
+	}
+
 	// Determine how many lines fit.
 	// area.Height <= 0 means no space left — nothing fits.
 	if area.Height <= 0 {
@@ -605,7 +617,7 @@ func (p *Paragraph) PlanLayout(area LayoutArea) LayoutPlan {
 	totalH := 0.0
 	splitIdx := len(infos)
 	for i, info := range infos {
-		h := lineHeight
+		h := lineHeights[i]
 		if i == 0 {
 			h += info.spaceBefore
 		}
@@ -649,13 +661,35 @@ func (p *Paragraph) PlanLayout(area LayoutArea) LayoutPlan {
 		capturedWidth := lineMaxW
 		capturedAlign := p.align
 		capturedBg := p.background
-		capturedLineH := lineHeight
+		capturedLineH := lineHeights[i]
+
+		// Build child blocks for inline-block words.
+		var inlineChildren []PlacedBlock
+		inlineX := x
+		for _, w := range info.words {
+			if w.InlineBlock != nil {
+				ibPlan := w.InlineBlock.PlanLayout(LayoutArea{
+					Width: w.InlineWidth, Height: w.InlineHeight,
+				})
+				for _, ib := range ibPlan.Blocks {
+					ib.X += inlineX
+					ib.Y += capturedLineH - w.InlineHeight
+					inlineChildren = append(inlineChildren, ib)
+				}
+			}
+			inlineX += w.Width
+			if w.InlineBlock != nil {
+				inlineX += w.SpaceAfter
+			} else {
+				inlineX += w.SpaceAfter
+			}
+		}
 
 		block := PlacedBlock{
 			X:      x,
 			Y:      curY,
 			Width:  info.width,
-			Height: lineHeight,
+			Height: capturedLineH,
 			Tag:    "P",
 			Draw: func(ctx DrawContext, absX, absTopY float64) {
 				if capturedBg != nil {
@@ -663,9 +697,10 @@ func (p *Paragraph) PlanLayout(area LayoutArea) LayoutPlan {
 				}
 				drawTextLine(ctx, capturedWords, absX, absTopY-capturedLineH, capturedWidth, capturedAlign, capturedIsLast)
 			},
+			Children: inlineChildren,
 		}
 		blocks = append(blocks, block)
-		curY += lineHeight
+		curY += capturedLineH
 		if i == splitIdx-1 {
 			curY += info.spaceAfter
 		}

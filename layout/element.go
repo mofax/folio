@@ -221,4 +221,10 @@ type Word struct {
 	LetterSpacing float64 // extra inter-character space (Tc operator)
 	WordSpacing   float64 // extra inter-word space added to SpaceAfter
 	BaselineShift float64 // vertical offset (positive = up, negative = down)
+
+	// InlineBlock fields: when set, this Word represents an inline-block
+	// element (e.g., a Div) that flows within a paragraph like a "big word".
+	InlineBlock  Element // the layout element to render instead of text
+	InlineWidth  float64 // pre-measured width of the inline block
+	InlineHeight float64 // pre-measured height of the inline block
 }

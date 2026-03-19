@@ -51,6 +51,18 @@ func drawTextLine(ctx DrawContext, words []Word, x, baselineY, maxWidth float64,
 	curColor := Color{R: -1, G: -1, B: -1}
 	curX := x
 	for i, word := range words {
+		// Inline-block words: skip text rendering (rendered as child PlacedBlocks).
+		if word.InlineBlock != nil {
+			if i < len(words)-1 {
+				spaceW := words[0].SpaceAfter
+				if spaceW == 0 {
+					spaceW = 3
+				}
+				curX += word.InlineWidth + spaceW
+			}
+			continue
+		}
+
 		if word.Color != curColor {
 			setFillColor(ctx.Stream, word.Color)
 			curColor = word.Color
