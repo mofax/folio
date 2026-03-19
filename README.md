@@ -390,5 +390,3 @@ go test ./...
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
-
-Free for commercial use. No per-server fees. No AGPL restrictions.
