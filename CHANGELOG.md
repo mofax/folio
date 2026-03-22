@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-03-22
+
+### Added
+- **Comprehensive GoDoc comments** across all 14 packages — every exported and unexported symbol now has an accurate doc comment following Go conventions
+- **Package-level doc comments** added to `layout`, `html`, `svg`, and consolidated in `core` (had two conflicting comments)
+- **`ARCHITECTURE.md`** documenting design principles, package responsibilities, layering rules, dependency policy, and non-goals
+- **Examples directory** with hello-world sample
+
+### Fixed
+- Stale/inaccurate doc comments: watermark "prepends" → "appends", `dss.Build` return description, `PdfObjects` → `BuildObjects`, merged interface docs in layout, and others
+- `cmd/folio printUsage` referenced nonexistent "region" extraction strategy
+- `svg/doc.go` listed nonexistent `clipPath` support, missing `radialGradient`
+- `layout/doc.go` referenced wrong type names (`Tab` → `TabbedLine`, nonexistent `Transform` element)
+- `font/standard.go` package doc was stale ("and later font parsing" — parsing is fully implemented)
+
+### Changed
+- Removed committed `folio.wasm` binary (7.2MB) from the repository; the release workflow already builds it fresh per tagged version
+- Added `*.wasm` to `.gitignore`
+- golangci-lint issues fixed and linter added to CI
+- Apache 2.0 license replaced with verbatim text; missing license headers added
+
 ## [0.4.0] - 2026-03-19
 
 ### Added
