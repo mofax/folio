@@ -205,6 +205,7 @@ func (p *Paragraph) Layout(maxWidth float64) []Line {
 				LetterSpacing:   run.LetterSpacing,
 				WordSpacing:     run.WordSpacing,
 				BaselineShift:   run.BaselineShift,
+				LinkURI:         run.LinkURI,
 			})
 		}
 		if run.FontSize > maxFontSize {
@@ -724,6 +725,9 @@ func (p *Paragraph) PlanLayout(area LayoutArea) LayoutPlan {
 			},
 			Children: inlineChildren,
 		}
+		// Compute precise link annotations for every distinct link URI
+		// in this line. Each linked span gets its own annotation rect.
+		block.Links = linkSpans(info.words)
 		blocks = append(blocks, block)
 		curY += capturedLineH
 		if i == splitIdx-1 {
@@ -783,6 +787,7 @@ func (p *Paragraph) measureWords(maxWidth float64) ([]Word, float64) {
 				LetterSpacing:   run.LetterSpacing,
 				WordSpacing:     run.WordSpacing,
 				BaselineShift:   run.BaselineShift,
+				LinkURI:         run.LinkURI,
 			})
 		}
 		if run.FontSize > maxFontSize {
@@ -822,6 +827,52 @@ func (p *Paragraph) wrapWords(words []Word, maxWidth float64) [][]Word {
 	}
 	lines = append(lines, slices.Clone(words[lineStart:]))
 	return lines
+}
+
+// linkSpans computes a LinkArea for every contiguous run of words that
+// share the same non-empty LinkURI. Each span's X and W are relative to
+// the line's starting x position. This supports multiple distinct links
+// on the same line (e.g. "Visit GitHub or GitLab").
+func linkSpans(words []Word) []LinkArea {
+	var spans []LinkArea
+	cx := 0.0
+	i := 0
+	for i < len(words) {
+		uri := words[i].LinkURI
+		if uri == "" {
+			if i < len(words)-1 {
+				cx += words[i].Width + words[i].SpaceAfter
+			}
+			i++
+			continue
+		}
+		// Start of a linked span.
+		startX := cx
+		endX := cx + words[i].Width
+		j := i + 1
+		for j < len(words) && words[j].LinkURI == uri {
+			// Extend through the space before this word.
+			endX = cx
+			for k := i; k < j; k++ {
+				endX += words[k].Width + words[k].SpaceAfter
+			}
+			endX += words[j].Width
+			j++
+		}
+		spans = append(spans, LinkArea{
+			URI: uri,
+			X:   startX,
+			W:   endX - startX,
+		})
+		// Advance cx past all words in this span.
+		for i < j {
+			if i < len(words)-1 {
+				cx += words[i].Width + words[i].SpaceAfter
+			}
+			i++
+		}
+	}
+	return spans
 }
 
 // lineWidth computes the content width of a word slice.

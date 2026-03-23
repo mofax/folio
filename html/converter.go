@@ -2805,6 +2805,15 @@ func (c *converter) collectRuns(n *html.Node, style computedStyle) []layout.Text
 			}
 			childStyle := c.computeElementStyle(child, style)
 			childRuns := c.collectRuns(child, childStyle)
+			// Propagate href from <a> elements to all child runs.
+			if child.DataAtom == atom.A {
+				href := getAttr(child, "href")
+				if href != "" {
+					for i := range childRuns {
+						childRuns[i].LinkURI = href
+					}
+				}
+			}
 			runs = append(runs, childRuns...)
 		}
 	}
