@@ -343,6 +343,79 @@ func TestConvertLinkInParagraph(t *testing.T) {
 	}
 }
 
+// TestConvertLinkInParagraphProducesAnnotation verifies that <a href="...">
+// inside a <p> produces a PlacedBlock with a Link annotation, so the
+// document layer can create a clickable PDF annotation. Regression test for #23.
+func TestConvertLinkInParagraphProducesAnnotation(t *testing.T) {
+	htmlStr := `<p><a href="https://example.com">Click here</a></p>`
+	elems, err := Convert(htmlStr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) == 0 {
+		t.Fatal("expected at least 1 element")
+	}
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 400, Height: 1000})
+	found := false
+	for _, b := range plan.Blocks {
+		for _, link := range b.Links {
+			if link.URI == "https://example.com" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected a PlacedBlock with Links containing URI 'https://example.com'")
+	}
+}
+
+// TestConvertMixedTextAndLinkInParagraph verifies that a paragraph with
+// both plain text and a link produces link annotations only for the linked part.
+func TestConvertMixedTextAndLinkInParagraph(t *testing.T) {
+	htmlStr := `<p>Visit <a href="https://example.com">our site</a> for more.</p>`
+	elems, err := Convert(htmlStr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) == 0 {
+		t.Fatal("expected at least 1 element")
+	}
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 400, Height: 1000})
+	linkCount := 0
+	for _, b := range plan.Blocks {
+		linkCount += len(b.Links)
+	}
+	if linkCount == 0 {
+		t.Error("expected at least one block with a Link annotation")
+	}
+}
+
+// TestConvertMultipleLinksOnSameLine verifies that multiple distinct links
+// on the same line each get their own annotation. Regression test for the
+// per-line single-link limitation.
+func TestConvertMultipleLinksOnSameLine(t *testing.T) {
+	htmlStr := `<p><a href="https://a.com">A</a> and <a href="https://b.com">B</a> and <a href="https://c.com">C</a></p>`
+	elems, err := Convert(htmlStr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) == 0 {
+		t.Fatal("expected at least 1 element")
+	}
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 400, Height: 1000})
+	uris := make(map[string]bool)
+	for _, b := range plan.Blocks {
+		for _, link := range b.Links {
+			uris[link.URI] = true
+		}
+	}
+	for _, want := range []string{"https://a.com", "https://b.com", "https://c.com"} {
+		if !uris[want] {
+			t.Errorf("missing link annotation for %s (found: %v)", want, uris)
+		}
+	}
+}
+
 func TestConvertTableWithCSS(t *testing.T) {
 	html := `<table style="border: 1px solid black">
 		<tr><td style="padding: 8px; background-color: #eee">Styled cell</td></tr>
