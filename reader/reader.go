@@ -348,6 +348,12 @@ func (r *PdfReader) Catalog() *core.PdfDictionary {
 	return r.catalog
 }
 
+// StructureTree parses and returns the document's structure tree.
+// Returns nil if the document is not tagged.
+func (r *PdfReader) StructureTree() *StructureTree {
+	return ParseStructureTree(r.catalog, r.resolver)
+}
+
 // ResolveObject resolves an indirect reference to its target object.
 func (r *PdfReader) ResolveObject(obj core.PdfObject) (core.PdfObject, error) {
 	return r.resolver.ResolveDeep(obj)

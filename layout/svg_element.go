@@ -12,10 +12,11 @@ import (
 
 // SVGElement is a layout element that renders an SVG graphic in the document flow.
 type SVGElement struct {
-	svg    *svg.SVG
-	width  float64 // explicit width in points (0 = auto from SVG/viewBox)
-	height float64 // explicit height in points (0 = auto)
-	align  Align
+	svg     *svg.SVG
+	width   float64 // explicit width in points (0 = auto from SVG/viewBox)
+	height  float64 // explicit height in points (0 = auto)
+	align   Align
+	altText string // alternative text for accessibility (PDF/UA)
 }
 
 // NewSVGElement creates a layout element from a parsed SVG.
@@ -38,6 +39,12 @@ func (se *SVGElement) SetSize(width, height float64) *SVGElement {
 // SetAlign sets horizontal alignment.
 func (se *SVGElement) SetAlign(a Align) *SVGElement {
 	se.align = a
+	return se
+}
+
+// SetAltText sets alternative text for accessibility (PDF/UA).
+func (se *SVGElement) SetAltText(text string) *SVGElement {
+	se.altText = text
 	return se
 }
 
@@ -114,7 +121,8 @@ func (se *SVGElement) PlanLayout(area LayoutArea) LayoutPlan {
 		Consumed: h,
 		Blocks: []PlacedBlock{{
 			X: x, Y: 0, Width: w, Height: h,
-			Tag: "Figure",
+			Tag:     "Figure",
+			AltText: se.altText,
 			Draw: func(ctx DrawContext, absX, absTopY float64) {
 				opts := svg.RenderOptions{
 					RegisterOpacity: func(opacity float64) string {

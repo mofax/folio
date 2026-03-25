@@ -7,10 +7,11 @@ import "github.com/carlos7ags/folio/barcode"
 
 // BarcodeElement is a layout element that renders a barcode in the document flow.
 type BarcodeElement struct {
-	bc     *barcode.Barcode
-	width  float64 // display width in points
-	height float64 // display height in points (0 = auto from aspect ratio)
-	align  Align
+	bc      *barcode.Barcode
+	width   float64 // display width in points
+	height  float64 // display height in points (0 = auto from aspect ratio)
+	align   Align
+	altText string // alternative text for accessibility (PDF/UA)
 }
 
 // NewBarcodeElement creates a layout element from a generated barcode.
@@ -34,6 +35,12 @@ func (be *BarcodeElement) SetHeight(h float64) *BarcodeElement {
 // SetAlign sets horizontal alignment.
 func (be *BarcodeElement) SetAlign(a Align) *BarcodeElement {
 	be.align = a
+	return be
+}
+
+// SetAltText sets alternative text for accessibility (PDF/UA).
+func (be *BarcodeElement) SetAltText(text string) *BarcodeElement {
+	be.altText = text
 	return be
 }
 
@@ -89,7 +96,8 @@ func (be *BarcodeElement) PlanLayout(area LayoutArea) LayoutPlan {
 		Consumed: h,
 		Blocks: []PlacedBlock{{
 			X: x, Y: 0, Width: w, Height: h,
-			Tag: "Figure",
+			Tag:     "Figure",
+			AltText: be.altText,
 			Draw: func(ctx DrawContext, absX, absTopY float64) {
 				capturedBC.Draw(ctx.Stream, absX, absTopY-capturedH, capturedW, capturedH)
 			},

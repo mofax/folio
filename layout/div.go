@@ -72,6 +72,7 @@ type Div struct {
 	outlineOffset float64
 	bgImage       *BackgroundImage
 	clear         string // CSS clear: "left", "right", "both"
+	structTag     string // custom structure tag for PDF/UA (empty = default "Div")
 
 	// CSS position:relative offsets (visual only, don't affect layout flow).
 	relOffsetX float64
@@ -314,6 +315,22 @@ func (d *Div) SetOpacity(o float64) *Div {
 func (d *Div) SetOverflow(v string) *Div {
 	d.overflow = v
 	return d
+}
+
+// SetTag sets a custom PDF structure tag for accessibility (PDF/UA).
+// Common tags: "Sect", "Art", "BlockQuote", "Caption", "Part".
+// If empty, the default "Div" tag is used.
+func (d *Div) SetTag(tag string) *Div {
+	d.structTag = tag
+	return d
+}
+
+// resolveTag returns the structure tag for this Div.
+func (d *Div) resolveTag() string {
+	if d.structTag != "" {
+		return d.structTag
+	}
+	return "Div"
 }
 
 // SetBoxShadow sets a box-shadow effect on the Div.
@@ -572,7 +589,7 @@ func (d *Div) PlanLayout(area LayoutArea) LayoutPlan {
 
 	containerBlock := PlacedBlock{
 		X: xPos, Y: d.spaceBefore + d.relOffsetY, Width: effectiveWidth, Height: totalH,
-		Tag: "Div",
+		Tag: d.resolveTag(),
 		Draw: func(ctx DrawContext, absX, absTopY float64) {
 			bottomY := absTopY - capturedTotalH
 			r := capturedDiv.borderRadius
