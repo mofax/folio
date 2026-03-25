@@ -74,5 +74,5 @@ jobs:
         continue-on-error: true
 
       - name: Fuzz parser
-        run: go test ./reader/... -fuzz=FuzzParse -fuzztime=30s
+        run: go test ./reader/... -fuzz='^FuzzParse$' -fuzztime=30s
         continue-on-error: true

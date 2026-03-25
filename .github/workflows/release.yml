@@ -28,7 +28,7 @@ jobs:
             goos: darwin
             goarch: arm64
             artifact: libfolio-macos-aarch64.dylib
-          - os: macos-13
+          - os: macos-latest
             goos: darwin
             goarch: amd64
             artifact: libfolio-macos-x86_64.dylib
