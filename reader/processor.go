@@ -9,27 +9,28 @@ import "math"
 // It carries full rendering context: position, size, font, color, and
 // the current transformation matrix at the time of rendering.
 type TextSpan struct {
-	Text       string     // decoded Unicode text
-	X, Y       float64    // baseline position in user space (after CTM)
-	Width      float64    // text width in user space (from glyph metrics or estimate)
-	Height     float64    // font size in user space
-	Font       string     // font resource name (e.g. "F1")
-	Color      [3]float64 // fill color (RGB, 0-1)
-	Matrix     [6]float64 // full CTM at time of rendering [a b c d e f]
-	Tag        string     // innermost marked content tag (e.g. "P", "H1", "Span"), empty if untagged
-	Visible    bool       // false if text rendering mode is invisible (Tr=3)
-	SpaceWidth float64    // width of space character in user space (0 if unavailable)
-	MCID       int        // marked content identifier (-1 if not inside marked content)
+	Text       string     `json:"text"`
+	X          float64    `json:"x"`
+	Y          float64    `json:"y"`
+	Width      float64    `json:"width"`
+	Height     float64    `json:"height"`
+	Font       string     `json:"font"`
+	Color      [3]float64 `json:"color"`
+	Matrix     [6]float64 `json:"matrix"`
+	Tag        string     `json:"tag"`
+	Visible    bool       `json:"visible"`
+	SpaceWidth float64    `json:"space_width"`
+	MCID       int        `json:"mcid"`
 }
 
 // PathOp represents a graphics path operation extracted from a content stream.
 type PathOp struct {
-	Type        PathType     // move, line, curve, rect, close
-	Points      [][2]float64 // control/end points in user space
-	StrokeColor [3]float64
-	FillColor   [3]float64
-	LineWidth   float64
-	Painted     PaintOp // how the path was painted (stroke, fill, both)
+	Type        PathType     `json:"type"`
+	Points      [][2]float64 `json:"points"`
+	StrokeColor [3]float64   `json:"stroke_color"`
+	FillColor   [3]float64   `json:"fill_color"`
+	LineWidth   float64      `json:"line_width"`
+	Painted     PaintOp      `json:"painted"`
 }
 
 // PathType identifies the kind of path segment.
@@ -56,12 +57,13 @@ const (
 
 // ImageRef represents an image reference found in the content stream.
 type ImageRef struct {
-	Name   string     // XObject resource name (e.g. "Im1")
-	X, Y   float64    // position in user space (bottom-left of image)
-	Width  float64    // display width in user space
-	Height float64    // display height in user space
-	Matrix [6]float64 // full CTM at time of rendering
-	Inline bool       // true if inline image (BI/ID/EI)
+	Name   string     `json:"name"`
+	X      float64    `json:"x"`
+	Y      float64    `json:"y"`
+	Width  float64    `json:"width"`
+	Height float64    `json:"height"`
+	Matrix [6]float64 `json:"matrix"`
+	Inline bool       `json:"inline"`
 }
 
 // GlyphSpan is a single glyph with its individual position and width.

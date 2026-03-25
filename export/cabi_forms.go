@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/carlos7ags/folio/core"
 	"github.com/carlos7ags/folio/document"
 	"github.com/carlos7ags/folio/forms"
 )
@@ -143,6 +144,24 @@ func folio_document_set_encryption(docH C.uint64_t, userPw, ownerPw *C.char, alg
 		Algorithm:     document.EncryptionAlgorithm(algorithm),
 		UserPassword:  C.GoString(userPw),
 		OwnerPassword: C.GoString(ownerPw),
+	})
+	return errOK
+}
+
+// folio_document_set_encryption_with_permissions configures PDF encryption with permissions.
+// permissions is a bitmask of FOLIO_PERM_* flags.
+//
+//export folio_document_set_encryption_with_permissions
+func folio_document_set_encryption_with_permissions(docH C.uint64_t, userPw, ownerPw *C.char, algorithm, permissions C.int32_t) C.int32_t {
+	doc, errCode := loadDoc(docH)
+	if errCode != errOK {
+		return errCode
+	}
+	doc.SetEncryption(document.EncryptionConfig{
+		Algorithm:     document.EncryptionAlgorithm(algorithm),
+		UserPassword:  C.GoString(userPw),
+		OwnerPassword: C.GoString(ownerPw),
+		Permissions:   core.Permission(permissions),
 	})
 	return errOK
 }

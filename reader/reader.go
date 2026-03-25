@@ -657,6 +657,61 @@ func (p *PageInfo) TextSpans() ([]TextSpan, error) {
 	return proc.Process(ops), nil
 }
 
+// ImageRefs extracts image references with positions from the page content stream.
+func (p *PageInfo) ImageRefs() ([]ImageRef, error) {
+	proc, err := p.processContent()
+	if err != nil {
+		return nil, err
+	}
+	if proc == nil {
+		return nil, nil
+	}
+	return proc.Images(), nil
+}
+
+// PathOps extracts graphics path operations from the page content stream.
+func (p *PageInfo) PathOps() ([]PathOp, error) {
+	proc, err := p.processContent()
+	if err != nil {
+		return nil, err
+	}
+	if proc == nil {
+		return nil, nil
+	}
+	return proc.Paths(), nil
+}
+
+// processContent creates a ContentProcessor, runs it, and returns it.
+func (p *PageInfo) processContent() (*ContentProcessor, error) {
+	data, err := p.ContentStream()
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, nil
+	}
+
+	var fonts FontCache
+	if p.reader != nil {
+		res, resErr := p.Resources()
+		if resErr == nil && res != nil {
+			fonts = BuildFontCacheWithShared(res, p.reader.resolver, p.reader.getFontCache())
+		}
+	}
+
+	ops := ParseContentStream(data)
+	proc := NewContentProcessor(fonts)
+
+	if p.reader != nil {
+		proc.SetFormResolver(func(name string) []ContentOp {
+			return p.resolveFormXObject(name)
+		})
+	}
+
+	proc.Process(ops)
+	return proc, nil
+}
+
 // ExtractTaggedText extracts text using the structure tree for logical
 // reading order. If the document is not tagged, falls back to LocationStrategy.
 func (p *PageInfo) ExtractTaggedText() (string, error) {
