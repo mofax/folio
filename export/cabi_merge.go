@@ -138,6 +138,94 @@ func folio_merge_write_to_buffer(mergedH C.uint64_t) C.uint64_t {
 	return C.uint64_t(ht.store(newCBuffer(buf.Bytes())))
 }
 
+// folio_merge_flatten_forms renders form field appearances into page content
+// and removes the interactive AcroForm.
+//
+//export folio_merge_flatten_forms
+func folio_merge_flatten_forms(mergedH C.uint64_t) C.int32_t {
+	m, errCode := loadModifier(mergedH)
+	if errCode != errOK {
+		return errCode
+	}
+	if err := m.FlattenForms(); err != nil {
+		return setErr(errPDF, err)
+	}
+	return errOK
+}
+
+// folio_merge_page_count returns the number of pages in the merged document.
+//
+//export folio_merge_page_count
+func folio_merge_page_count(mergedH C.uint64_t) C.int32_t {
+	m, errCode := loadModifier(mergedH)
+	if errCode != errOK {
+		return 0
+	}
+	return C.int32_t(m.PageCount())
+}
+
+// folio_merge_remove_page removes the page at the given index.
+//
+//export folio_merge_remove_page
+func folio_merge_remove_page(mergedH C.uint64_t, index C.int32_t) C.int32_t {
+	m, errCode := loadModifier(mergedH)
+	if errCode != errOK {
+		return errCode
+	}
+	if err := m.RemovePage(int(index)); err != nil {
+		return setErr(errInvalidArg, err)
+	}
+	return errOK
+}
+
+// folio_merge_rotate_page sets the rotation of a page (must be multiple of 90).
+//
+//export folio_merge_rotate_page
+func folio_merge_rotate_page(mergedH C.uint64_t, index, degrees C.int32_t) C.int32_t {
+	m, errCode := loadModifier(mergedH)
+	if errCode != errOK {
+		return errCode
+	}
+	if err := m.RotatePage(int(index), int(degrees)); err != nil {
+		return setErr(errInvalidArg, err)
+	}
+	return errOK
+}
+
+// folio_merge_reorder_pages rearranges pages according to the given order array.
+//
+//export folio_merge_reorder_pages
+func folio_merge_reorder_pages(mergedH C.uint64_t, order *C.int32_t, count C.int32_t) C.int32_t {
+	m, errCode := loadModifier(mergedH)
+	if errCode != errOK {
+		return errCode
+	}
+	n := int(count)
+	cOrder := (*[1 << 20]C.int32_t)(unsafe.Pointer(order))[:n:n]
+	goOrder := make([]int, n)
+	for i := 0; i < n; i++ {
+		goOrder[i] = int(cOrder[i])
+	}
+	if err := m.ReorderPages(goOrder); err != nil {
+		return setErr(errInvalidArg, err)
+	}
+	return errOK
+}
+
+// folio_merge_crop_page sets the CropBox on a page.
+//
+//export folio_merge_crop_page
+func folio_merge_crop_page(mergedH C.uint64_t, index C.int32_t, x1, y1, x2, y2 C.double) C.int32_t {
+	m, errCode := loadModifier(mergedH)
+	if errCode != errOK {
+		return errCode
+	}
+	if err := m.CropPage(int(index), [4]float64{float64(x1), float64(y1), float64(x2), float64(y2)}); err != nil {
+		return setErr(errInvalidArg, err)
+	}
+	return errOK
+}
+
 // folio_merge_free removes a merged document handle from the handle table.
 //
 //export folio_merge_free

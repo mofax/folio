@@ -10,6 +10,7 @@ package main
 */
 import "C"
 import (
+	"encoding/json"
 	"fmt"
 	"unsafe"
 
@@ -140,6 +141,84 @@ func folio_reader_page_height(rH C.uint64_t, pageIndex C.int32_t) C.double {
 		return 0
 	}
 	return C.double(page.Height)
+}
+
+// folio_reader_text_spans extracts text spans with positions as a JSON buffer.
+//
+//export folio_reader_text_spans
+func folio_reader_text_spans(rH C.uint64_t, pageIndex C.int32_t) C.uint64_t {
+	r, errCode := loadReader(rH)
+	if errCode != errOK {
+		return 0
+	}
+	page, err := r.Page(int(pageIndex))
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	spans, err := page.TextSpans()
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	data, err := json.Marshal(spans)
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	return C.uint64_t(ht.store(newCBuffer(data)))
+}
+
+// folio_reader_images extracts image references with positions as a JSON buffer.
+//
+//export folio_reader_images
+func folio_reader_images(rH C.uint64_t, pageIndex C.int32_t) C.uint64_t {
+	r, errCode := loadReader(rH)
+	if errCode != errOK {
+		return 0
+	}
+	page, err := r.Page(int(pageIndex))
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	images, err := page.ImageRefs()
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	data, err := json.Marshal(images)
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	return C.uint64_t(ht.store(newCBuffer(data)))
+}
+
+// folio_reader_paths extracts graphics path operations as a JSON buffer.
+//
+//export folio_reader_paths
+func folio_reader_paths(rH C.uint64_t, pageIndex C.int32_t) C.uint64_t {
+	r, errCode := loadReader(rH)
+	if errCode != errOK {
+		return 0
+	}
+	page, err := r.Page(int(pageIndex))
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	paths, err := page.PathOps()
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	data, err := json.Marshal(paths)
+	if err != nil {
+		setLastError(err.Error())
+		return 0
+	}
+	return C.uint64_t(ht.store(newCBuffer(data)))
 }
 
 // folio_reader_free removes a reader handle from the handle table.

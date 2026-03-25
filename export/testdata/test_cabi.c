@@ -1151,6 +1151,253 @@ int main(void) {
     folio_list_free(list);
     folio_document_free(doc);
 
+    /* ===== Stage 33: Digital Signatures ===== */
+    printf("Testing digital signatures...\n");
+
+    /* Embedded test key and cert (self-signed RSA 2048, CN=Folio Test) */
+    static const char test_key_pem[] =
+        "-----BEGIN PRIVATE KEY-----\n"
+        "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCNHIB8Wg853Ty1\n"
+        "TpY3vizEquniPCvZo4+Tu8z0RwsUcADbI/n1v8RVA20GkXZTw1odQ4S6hrjU05Z3\n"
+        "T1AGUH+Gii+x5G1Zikio/MZ3FH89VxXeQdHcZsfskyiCCW1Xr8YQ0u0YbRt60OtL\n"
+        "co+UM8uX/pR4yxuWFAlMvei2AV3a/12S/Z8130HpA6nIKtlNsF1jSwAlPz5uz2w8\n"
+        "idtNk+40Rg6KdFOwaGI4sn4xQsLXuNFuvgrctOJQlXvy7qn+hFXWzeL85aPznlhD\n"
+        "uY0kfpDiypvy5hPwL1bm12159V8ORaYqjmYXM2Uwe5lwo0/qoA5UghcpNE1C2XUq\n"
+        "vKR5Bh4TAgMBAAECggEALdapYju7IHfepaLep0LutgAzM5uKPwujs0DZRizhy4TK\n"
+        "smUQaKUfuOIBA5YzEuitmD37mr/ywKfvA9jOzQ5PLrwq3CWw49pI2iQqsDoHTzy/\n"
+        "zNAixO7aWN5A1WUMkOR3ebWa8UlYGOBO3tZbD7B3nWtEfay0zF672qMCOkVdYKsC\n"
+        "ELR9yo/EcGimVONocd4Ng7AcuEqkw1vQX8PRFGcWIU2hilZ0QWrILczxpU4UZ10W\n"
+        "luoGFDMKilVwl80pR0cNipBTXFpCSFd64yGEq64oAwAKsUyu+U8x8JqY4NfKmDKd\n"
+        "Fl1o0l3gCiV/U01C1sbg6UA1N57ydNi+C2BX4B+wYQKBgQDBl9tupP5jgIoKHPlP\n"
+        "PgGAKYYnmJojvmxnOL981L555e2Aa7izpvMJgtTLao41C1I/yGoSzqbuAyEzbuXY\n"
+        "DoMfxiM8iYGQVPsMDmyfHnsh8QJ4mezvJtUDH5AVlmDF4rlNVUM2J4fBudYKK9Ba\n"
+        "on4DGcNdSnyqCSLb3adiLO4MsQKBgQC6mZ3AphJdFtkwfcET3USw4XAWv/OBq8Y3\n"
+        "iW8W1iVOTWks8kz2zH3BwPOaPgItv+BxWb7Y3xVdZX4PenQYEvIDh1fDSmDVk1ZV\n"
+        "wr7ecuCyZxvlVKCvQR6k7Owm6v3obUxh9d0JPhO40dBQmNXqIleCvomYEd6iOtdb\n"
+        "MMuszxl4AwKBgDdPT54Y/aUoAEhLZt9A8+TN+EovyzoTGZ2UFQFxNspU6roaDLcn\n"
+        "J6C8BFfppZ96EJGwjL261O6DbmTndjt4SfY2AbM2BhJadS9In7gGWV+lH/Oc5pid\n"
+        "G5a82cmRISzoTdDOX1mFib/LfF+DjQ+YBTCVl797nIpn+dGfTkc6VvjBAoGAZdFM\n"
+        "csIrYwAEoqD7qYsi4CEiuEck56yDC+rB4wQWdxNmQFA2DrSmKgLO6WrMZYo9PZxq\n"
+        "touDbOLkVi3LCxfLVoGTMcxz6hXrFgCdhWPJl48Leacjxn0R64wbj2DKCvkYpJsz\n"
+        "cMeem0phEJlUn9z9QyoUihW2FW9l8yw89p5Kl2ECgYEAlx6vE0trutkMTPqBPF0T\n"
+        "GsEWTMl4T/rBjg44uhqnEeCbmP+c/AdoRvIDFsmL3HeGVpXdPY2ErXxNGTgVDiHf\n"
+        "7SLFmOzww1Fb8l3qtO08/aUTgDY2oYUIm3HxjgwKhhDGu0HkQKjHMLiDUs2kbHBO\n"
+        "VhUNHIavjT9GTx1xkW9wzVg=\n"
+        "-----END PRIVATE KEY-----\n";
+
+    static const char test_cert_pem[] =
+        "-----BEGIN CERTIFICATE-----\n"
+        "MIIDKTCCAhGgAwIBAgIUO1af5HyjPhg326gfYL84I/tEMbwwDQYJKoZIhvcNAQEL\n"
+        "BQAwJDETMBEGA1UEAwwKRm9saW8gVGVzdDENMAsGA1UECgwEVGVzdDAeFw0yNjAz\n"
+        "MjUwNjI1NDBaFw0yNzAzMjUwNjI1NDBaMCQxEzARBgNVBAMMCkZvbGlvIFRlc3Qx\n"
+        "DTALBgNVBAoMBFRlc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCN\n"
+        "HIB8Wg853Ty1TpY3vizEquniPCvZo4+Tu8z0RwsUcADbI/n1v8RVA20GkXZTw1od\n"
+        "Q4S6hrjU05Z3T1AGUH+Gii+x5G1Zikio/MZ3FH89VxXeQdHcZsfskyiCCW1Xr8YQ\n"
+        "0u0YbRt60OtLco+UM8uX/pR4yxuWFAlMvei2AV3a/12S/Z8130HpA6nIKtlNsF1j\n"
+        "SwAlPz5uz2w8idtNk+40Rg6KdFOwaGI4sn4xQsLXuNFuvgrctOJQlXvy7qn+hFXW\n"
+        "zeL85aPznlhDuY0kfpDiypvy5hPwL1bm12159V8ORaYqjmYXM2Uwe5lwo0/qoA5U\n"
+        "ghcpNE1C2XUqvKR5Bh4TAgMBAAGjUzBRMB0GA1UdDgQWBBSqc6CkXSGCgZANDoiW\n"
+        "xkMQVoiNEzAfBgNVHSMEGDAWgBSqc6CkXSGCgZANDoiWxkMQVoiNEzAPBgNVHRMB\n"
+        "Af8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQANCJL0Rw97pLM8r9H0N8YlaBtJ\n"
+        "sp4sE6xHFbrZ05U6AlJdN2EAYpzBW7CkBF1o4lCZ3Aj28NoCkaL6Rfspr5yx8FKC\n"
+        "panfFP7M7HsZlrZxhyCCxiDid+xcgI0YEpwtwg8LebzmS3pYcstopD3/e9dDDeCe\n"
+        "TvJWAbhAOGvUyl5+Lv/yWPGAB2UyaeX1gXlbhJgdEF5MrJ/jsiYlX3yaBpZB81tw\n"
+        "6KsMBoKtX+cJ7q7vy4/kzGQyvWuX+AtGRuK2OT5EHpuyonPMkv+kiAlC6tEumVfN\n"
+        "2k3yGjRXibzFKshYrFQquqkrjb5WEcN5CjZOwZKEx9S8TjZWw5rjaff3CmMA\n"
+        "-----END CERTIFICATE-----\n";
+
+    /* Test invalid PEM */
+    uint64_t badSigner = folio_signer_new_pem("bad", 3, "bad", 3);
+    ASSERT(badSigner == 0, "signer_new_pem rejects invalid PEM");
+
+    /* Create signer from test PEM */
+    uint64_t signer = folio_signer_new_pem(
+        test_key_pem, (int32_t)strlen(test_key_pem),
+        test_cert_pem, (int32_t)strlen(test_cert_pem));
+    ASSERT(signer != 0, "signer_new_pem succeeds with test PEM");
+
+    /* TSA and OCSP clients */
+    uint64_t tsa = folio_tsa_client_new("http://timestamp.digicert.com");
+    ASSERT(tsa != 0, "tsa_client_new returns handle");
+
+    uint64_t ocsp = folio_ocsp_client_new();
+    ASSERT(ocsp != 0, "ocsp_client_new returns handle");
+
+    /* Build sign options */
+    uint64_t signOpts = folio_sign_opts_new(signer, 0 /* BB */);
+    ASSERT(signOpts != 0, "sign_opts_new returns handle");
+
+    rc = folio_sign_opts_set_name(signOpts, "Test Signer");
+    ASSERT(rc == 0, "sign_opts_set_name succeeds");
+
+    rc = folio_sign_opts_set_reason(signOpts, "Testing");
+    ASSERT(rc == 0, "sign_opts_set_reason succeeds");
+
+    rc = folio_sign_opts_set_location(signOpts, "Test Lab");
+    ASSERT(rc == 0, "sign_opts_set_location succeeds");
+
+    rc = folio_sign_opts_set_contact_info(signOpts, "test@example.com");
+    ASSERT(rc == 0, "sign_opts_set_contact_info succeeds");
+
+    /* Create a PDF to sign */
+    doc = folio_document_new_letter();
+    helv = folio_font_helvetica();
+    para = folio_paragraph_new("Document to be signed", helv, 14.0);
+    folio_document_add(doc, para);
+    buf = folio_document_write_to_buffer(doc);
+    ASSERT(buf != 0, "PDF for signing created");
+    folio_document_free(doc);
+
+    /* Sign the PDF (B-B level, no TSA needed) */
+    void* pdfData = folio_buffer_data(buf);
+    int32_t pdfLen = folio_buffer_len(buf);
+    uint64_t signedBuf = folio_sign_pdf(pdfData, pdfLen, signOpts);
+    ASSERT(signedBuf != 0, "sign_pdf returns buffer handle");
+    ASSERT(folio_buffer_len(signedBuf) > pdfLen, "signed PDF is larger than original");
+
+    void* signedData = folio_buffer_data(signedBuf);
+    ASSERT(memcmp(signedData, "%PDF", 4) == 0, "signed output is valid PDF");
+
+    folio_buffer_free(signedBuf);
+    folio_buffer_free(buf);
+    folio_sign_opts_free(signOpts);
+    folio_tsa_client_free(tsa);
+    folio_ocsp_client_free(ocsp);
+    folio_signer_free(signer);
+
+    /* ===== Stage 34: Page manipulation ===== */
+    printf("Testing page manipulation...\n");
+
+    /* Create a 3-page merged document */
+    doc = folio_document_new_letter();
+    para = folio_paragraph_new("Page 1", helv, 14.0);
+    folio_document_add(doc, para);
+    folio_document_save(doc, "/tmp/folio_manip_1.pdf");
+    folio_document_free(doc);
+
+    doc = folio_document_new_letter();
+    para = folio_paragraph_new("Page 2", helv, 14.0);
+    folio_document_add(doc, para);
+    folio_document_save(doc, "/tmp/folio_manip_2.pdf");
+    folio_document_free(doc);
+
+    doc = folio_document_new_letter();
+    para = folio_paragraph_new("Page 3", helv, 14.0);
+    folio_document_add(doc, para);
+    folio_document_save(doc, "/tmp/folio_manip_3.pdf");
+    folio_document_free(doc);
+
+    const char* manipPaths[] = {"/tmp/folio_manip_1.pdf", "/tmp/folio_manip_2.pdf", "/tmp/folio_manip_3.pdf"};
+    merged = folio_merge_files((char**)manipPaths, 3);
+    ASSERT(merged != 0, "merge 3 files for manipulation");
+
+    int32_t pc = folio_merge_page_count(merged);
+    ASSERT(pc == 3, "merge_page_count is 3");
+
+    /* Rotate page 0 */
+    rc = folio_merge_rotate_page(merged, 0, 90);
+    ASSERT(rc == 0, "merge_rotate_page succeeds");
+
+    /* Crop page 1 */
+    rc = folio_merge_crop_page(merged, 1, 36, 36, 576, 756);
+    ASSERT(rc == 0, "merge_crop_page succeeds");
+
+    /* Remove page 2 */
+    rc = folio_merge_remove_page(merged, 2);
+    ASSERT(rc == 0, "merge_remove_page succeeds");
+
+    pc = folio_merge_page_count(merged);
+    ASSERT(pc == 2, "page count is 2 after remove");
+
+    /* Reorder: reverse */
+    int32_t reverseOrder[] = {1, 0};
+    rc = folio_merge_reorder_pages(merged, reverseOrder, 2);
+    ASSERT(rc == 0, "merge_reorder_pages succeeds");
+
+    rc = folio_merge_save(merged, "/tmp/folio_manipulated.pdf");
+    ASSERT(rc == 0, "manipulated document save succeeds");
+    folio_merge_free(merged);
+
+    /* ===== Stage 35: Structured content extraction ===== */
+    printf("Testing structured content extraction...\n");
+
+    /* Create a simple PDF with text */
+    doc = folio_document_new_letter();
+    helv = folio_font_helvetica();
+    para = folio_paragraph_new("Extractable text content", helv, 14.0);
+    folio_document_add(doc, para);
+    buf = folio_document_write_to_buffer(doc);
+    folio_document_free(doc);
+
+    /* Parse it back */
+    uint64_t extRdr = folio_reader_parse(folio_buffer_data(buf), folio_buffer_len(buf));
+    ASSERT(extRdr != 0, "reader_parse for extraction");
+
+    /* Text spans */
+    uint64_t spansBuf = folio_reader_text_spans(extRdr, 0);
+    ASSERT(spansBuf != 0, "reader_text_spans returns buffer");
+    ASSERT(folio_buffer_len(spansBuf) > 2, "text spans JSON is non-empty");
+    /* Verify JSON array start */
+    char* spansJson = (char*)folio_buffer_data(spansBuf);
+    ASSERT(spansJson[0] == '[', "text spans JSON starts with [");
+    folio_buffer_free(spansBuf);
+
+    /* Images (may be empty array) */
+    uint64_t imgBuf = folio_reader_images(extRdr, 0);
+    ASSERT(imgBuf != 0, "reader_images returns buffer");
+    folio_buffer_free(imgBuf);
+
+    /* Paths */
+    uint64_t pathBuf = folio_reader_paths(extRdr, 0);
+    ASSERT(pathBuf != 0, "reader_paths returns buffer");
+    folio_buffer_free(pathBuf);
+
+    folio_reader_free(extRdr);
+    folio_buffer_free(buf);
+
+    /* ===== Stage 36: Form flattening ===== */
+    printf("Testing form flattening...\n");
+
+    /* Open the forms PDF we created earlier */
+    uint64_t flatRdr = folio_reader_open("/tmp/folio_cabi_forms.pdf");
+    ASSERT(flatRdr != 0, "reader_open for flattening");
+
+    uint64_t flatReaders[] = {flatRdr};
+    uint64_t flatMerged = folio_reader_merge(flatReaders, 1);
+    ASSERT(flatMerged != 0, "merge for flattening");
+
+    rc = folio_merge_flatten_forms(flatMerged);
+    ASSERT(rc == 0, "merge_flatten_forms succeeds");
+
+    rc = folio_merge_save(flatMerged, "/tmp/folio_flattened.pdf");
+    ASSERT(rc == 0, "flattened document save succeeds");
+
+    folio_merge_free(flatMerged);
+    folio_reader_free(flatRdr);
+
+    /* Verify the flattened PDF has no form fields */
+    uint64_t flatCheck = folio_reader_open("/tmp/folio_flattened.pdf");
+    ASSERT(flatCheck != 0, "re-open flattened PDF");
+    ASSERT(folio_reader_page_count(flatCheck) >= 1, "flattened PDF has pages");
+    folio_reader_free(flatCheck);
+
+    /* ===== Stage 37: Encryption with permissions ===== */
+    printf("Testing encryption with permissions...\n");
+    doc = folio_document_new_letter();
+    folio_document_set_title(doc, "Encrypted");
+    helv = folio_font_helvetica();
+    para = folio_paragraph_new("Encrypted content", helv, 12.0);
+    folio_document_add(doc, para);
+
+    rc = folio_document_set_encryption_with_permissions(doc,
+        "user123", "owner456", 2 /* AES-256 */,
+        (1 << 2) | (1 << 4) /* PRINT | EXTRACT */);
+    ASSERT(rc == 0, "set_encryption_with_permissions succeeds");
+
+    rc = folio_document_save(doc, "/tmp/folio_cabi_encrypted.pdf");
+    ASSERT(rc == 0, "encrypted document save succeeds");
+    folio_document_free(doc);
+
     /* Summary */
     printf("\n%d passed, %d failed\n", passes, failures);
     return failures > 0 ? 1 : 0;

@@ -51,6 +51,7 @@ type Modifier struct {
 	kids      *core.PdfArray
 	pagesRef  *core.PdfIndirectReference
 	pageCount int
+	pageDicts []*core.PdfDictionary // parallel to kids.Elements
 	info      *core.PdfDictionary
 }
 
@@ -82,21 +83,29 @@ func (m *Modifier) appendReader(r *PdfReader) error {
 	copier := NewCopier(r, m.writer.AddObject)
 
 	for i := range r.PageCount() {
-		pageRef, err := copier.CopyPage(i)
+		page, err := r.Page(i)
 		if err != nil {
 			return fmt.Errorf("merge page %d: %w", i, err)
 		}
 
-		// Set /Parent to our pages dict.
-		// We need to resolve the page dict to set the parent.
-		// Since CopyPage returns a ref, the dict is already registered.
-		// We modify it in place (PdfDictionary is a pointer).
-		pageObj, _ := m.resolveRef(pageRef)
-		if pageDict, ok := pageObj.(*core.PdfDictionary); ok {
-			pageDict.Set("Parent", m.pagesRef)
+		// Deep-copy the page dictionary.
+		copied, err := copier.CopyObject(page.pageDict)
+		if err != nil {
+			return fmt.Errorf("merge page %d: %w", i, err)
 		}
 
+		copiedDict, ok := copied.(*core.PdfDictionary)
+		if !ok {
+			return fmt.Errorf("merge page %d: copied object is not a dictionary", i)
+		}
+
+		// Remove /Parent from source, set our own.
+		removeEntry(copiedDict, "Parent")
+		copiedDict.Set("Parent", m.pagesRef)
+
+		pageRef := m.writer.AddObject(copiedDict)
 		m.kids.Add(pageRef)
+		m.pageDicts = append(m.pageDicts, copiedDict)
 		m.pageCount++
 	}
 
@@ -141,6 +150,7 @@ func (m *Modifier) AddBlankPage(width, height float64) {
 
 	pageRef := m.writer.AddObject(pageDict)
 	m.kids.Add(pageRef)
+	m.pageDicts = append(m.pageDicts, pageDict)
 	m.pageCount++
 }
 
@@ -182,7 +192,82 @@ func (m *Modifier) AddPageWithText(width, height float64, text string, f *font.S
 
 	pageRef := m.writer.AddObject(pageDict)
 	m.kids.Add(pageRef)
+	m.pageDicts = append(m.pageDicts, pageDict)
 	m.pageCount++
+}
+
+// PageCount returns the number of pages in the modifier.
+func (m *Modifier) PageCount() int {
+	return m.pageCount
+}
+
+// RemovePage removes the page at the given 0-based index.
+func (m *Modifier) RemovePage(index int) error {
+	if index < 0 || index >= m.pageCount {
+		return fmt.Errorf("page index %d out of range [0, %d)", index, m.pageCount)
+	}
+	m.kids.Elements = append(m.kids.Elements[:index], m.kids.Elements[index+1:]...)
+	m.pageDicts = append(m.pageDicts[:index], m.pageDicts[index+1:]...)
+	m.pageCount--
+	return nil
+}
+
+// RotatePage sets the rotation of the page at the given index.
+// Degrees must be a multiple of 90 (0, 90, 180, 270).
+func (m *Modifier) RotatePage(index int, degrees int) error {
+	if index < 0 || index >= m.pageCount {
+		return fmt.Errorf("page index %d out of range [0, %d)", index, m.pageCount)
+	}
+	if degrees%90 != 0 {
+		return fmt.Errorf("rotation must be a multiple of 90, got %d", degrees)
+	}
+	if m.pageDicts[index] == nil {
+		return fmt.Errorf("page %d has no accessible dictionary", index)
+	}
+	m.pageDicts[index].Set("Rotate", core.NewPdfInteger(degrees))
+	return nil
+}
+
+// ReorderPages rearranges pages according to the given order.
+// order must be a permutation of [0, pageCount).
+func (m *Modifier) ReorderPages(order []int) error {
+	if len(order) != m.pageCount {
+		return fmt.Errorf("order length %d does not match page count %d", len(order), m.pageCount)
+	}
+	seen := make(map[int]bool, m.pageCount)
+	for _, idx := range order {
+		if idx < 0 || idx >= m.pageCount {
+			return fmt.Errorf("invalid page index %d in order", idx)
+		}
+		if seen[idx] {
+			return fmt.Errorf("duplicate page index %d in order", idx)
+		}
+		seen[idx] = true
+	}
+	newKids := make([]core.PdfObject, m.pageCount)
+	newDicts := make([]*core.PdfDictionary, m.pageCount)
+	for i, idx := range order {
+		newKids[i] = m.kids.Elements[idx]
+		newDicts[i] = m.pageDicts[idx]
+	}
+	m.kids.Elements = newKids
+	m.pageDicts = newDicts
+	return nil
+}
+
+// CropPage sets the CropBox on the page at the given index.
+func (m *Modifier) CropPage(index int, rect [4]float64) error {
+	if index < 0 || index >= m.pageCount {
+		return fmt.Errorf("page index %d out of range [0, %d)", index, m.pageCount)
+	}
+	if m.pageDicts[index] == nil {
+		return fmt.Errorf("page %d has no accessible dictionary", index)
+	}
+	m.pageDicts[index].Set("CropBox", core.NewPdfArray(
+		core.NewPdfReal(rect[0]), core.NewPdfReal(rect[1]),
+		core.NewPdfReal(rect[2]), core.NewPdfReal(rect[3]),
+	))
+	return nil
 }
 
 // SetInfo sets document metadata on the output PDF.

@@ -93,6 +93,17 @@ extern "C" {
 #define FOLIO_ENCRYPT_AES_128  1
 #define FOLIO_ENCRYPT_AES_256  2
 
+/* Encryption permissions (ISO 32000 Table 22, combine with |) */
+#define FOLIO_PERM_PRINT          (1 << 2)   /* bit 3: print */
+#define FOLIO_PERM_MODIFY         (1 << 3)   /* bit 4: modify contents */
+#define FOLIO_PERM_EXTRACT        (1 << 4)   /* bit 5: copy/extract text */
+#define FOLIO_PERM_ANNOTATE       (1 << 5)   /* bit 6: annotations, fill forms */
+#define FOLIO_PERM_FILL_FORMS     (1 << 8)   /* bit 9: fill form fields */
+#define FOLIO_PERM_EXTRACT_ACCESS (1 << 9)   /* bit 10: extract for accessibility */
+#define FOLIO_PERM_ASSEMBLE       (1 << 10)  /* bit 11: insert/rotate/delete pages */
+#define FOLIO_PERM_PRINT_HIGH     (1 << 11)  /* bit 12: high-quality print */
+#define FOLIO_PERM_ALL            0x0F3C
+
 /* QR error correction levels (barcode.ECCLevel) */
 #define FOLIO_ECC_L            0   /* 7% recovery */
 #define FOLIO_ECC_M            1   /* 15% recovery */
@@ -167,6 +178,8 @@ uint64_t folio_document_write_to_buffer(uint64_t doc);
 int32_t  folio_document_set_tagged(uint64_t doc, int32_t enabled);
 int32_t  folio_document_set_pdfa(uint64_t doc, int32_t level);
 int32_t  folio_document_set_encryption(uint64_t doc, const char *user_pw, const char *owner_pw, int32_t algorithm);
+int32_t  folio_document_set_encryption_with_permissions(uint64_t doc, const char *user_pw,
+             const char *owner_pw, int32_t algorithm, int32_t permissions);  /* FOLIO_PERM_* */
 int32_t  folio_document_set_auto_bookmarks(uint64_t doc, int32_t enabled);
 int32_t  folio_document_set_form(uint64_t doc, uint64_t form);
 
@@ -502,6 +515,40 @@ uint64_t folio_reader_extract_text(uint64_t reader, int32_t page_index);
 double   folio_reader_page_width(uint64_t reader, int32_t page_index);
 double   folio_reader_page_height(uint64_t reader, int32_t page_index);
 
+/* Structured content extraction (returns JSON buffer handles) */
+uint64_t folio_reader_text_spans(uint64_t reader, int32_t page_index);
+uint64_t folio_reader_images(uint64_t reader, int32_t page_index);
+uint64_t folio_reader_paths(uint64_t reader, int32_t page_index);
+
+/* ── Digital Signatures ─────────────────────────────────────────────── */
+
+/* PAdES conformance levels (sign.PAdESLevel) */
+#define FOLIO_PADES_BB    0   /* B-B: basic signature */
+#define FOLIO_PADES_BT    1   /* B-T: + timestamp */
+#define FOLIO_PADES_BLT   2   /* B-LT: + revocation data */
+#define FOLIO_PADES_BLTA  3   /* B-LTA: + document timestamp */
+
+uint64_t folio_signer_new_pem(const void *key_pem, int32_t key_len,
+             const void *cert_pem, int32_t cert_len);
+void     folio_signer_free(uint64_t signer);
+
+uint64_t folio_tsa_client_new(const char *url);
+void     folio_tsa_client_free(uint64_t tsa);
+
+uint64_t folio_ocsp_client_new(void);
+void     folio_ocsp_client_free(uint64_t ocsp);
+
+uint64_t folio_sign_opts_new(uint64_t signer, int32_t level);  /* FOLIO_PADES_* */
+int32_t  folio_sign_opts_set_name(uint64_t opts, const char *name);
+int32_t  folio_sign_opts_set_reason(uint64_t opts, const char *reason);
+int32_t  folio_sign_opts_set_location(uint64_t opts, const char *location);
+int32_t  folio_sign_opts_set_contact_info(uint64_t opts, const char *info);
+int32_t  folio_sign_opts_set_tsa(uint64_t opts, uint64_t tsa);
+int32_t  folio_sign_opts_set_ocsp(uint64_t opts, uint64_t ocsp);
+void     folio_sign_opts_free(uint64_t opts);
+
+uint64_t folio_sign_pdf(const void *pdf_data, int32_t pdf_len, uint64_t opts);  /* returns buffer handle */
+
 /* ── Merge (combine PDFs) ──────────────────────────────────────────── */
 
 uint64_t folio_reader_merge(const uint64_t *readers, int32_t count);
@@ -512,6 +559,12 @@ int32_t  folio_merge_add_page_with_text(uint64_t merged, double width, double he
              const char *text, uint64_t font, double font_size, double x, double y);
 int32_t  folio_merge_save(uint64_t merged, const char *path);
 uint64_t folio_merge_write_to_buffer(uint64_t merged);
+int32_t  folio_merge_flatten_forms(uint64_t merged);
+int32_t  folio_merge_page_count(uint64_t merged);
+int32_t  folio_merge_remove_page(uint64_t merged, int32_t index);
+int32_t  folio_merge_rotate_page(uint64_t merged, int32_t index, int32_t degrees);
+int32_t  folio_merge_reorder_pages(uint64_t merged, const int32_t *order, int32_t count);
+int32_t  folio_merge_crop_page(uint64_t merged, int32_t index, double x1, double y1, double x2, double y2);
 void     folio_merge_free(uint64_t merged);
 
 /* ── Forms ─────────────────────────────────────────────────────────── */
