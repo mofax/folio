@@ -363,6 +363,7 @@ void     folio_image_free(uint64_t img);
 uint64_t folio_image_element_new(uint64_t img);
 int32_t  folio_image_element_set_size(uint64_t elem, double w, double h);
 int32_t  folio_image_element_set_align(uint64_t elem, int32_t align);
+int32_t  folio_image_element_set_alt_text(uint64_t elem, const char *text);
 void     folio_image_element_free(uint64_t elem);
 
 /* ── Div (container) ───────────────────────────────────────────────── */
@@ -383,6 +384,7 @@ int32_t  folio_div_set_space_after(uint64_t div, double pts);
 int32_t  folio_div_set_border_radius(uint64_t div, double radius);
 int32_t  folio_div_set_opacity(uint64_t div, double opacity);
 int32_t  folio_div_set_overflow(uint64_t div, const char *mode);
+int32_t  folio_div_set_tag(uint64_t div, const char *tag);  /* PDF/UA structure tag override */
 int32_t  folio_div_set_box_shadow(uint64_t div, double offset_x, double offset_y,
              double blur, double spread, double r, double g, double b);
 int32_t  folio_div_set_max_height(uint64_t div, double pts);
@@ -450,6 +452,7 @@ void     folio_barcode_free(uint64_t bc);
 uint64_t folio_barcode_element_new(uint64_t bc, double width);
 int32_t  folio_barcode_element_set_height(uint64_t elem, double height);
 int32_t  folio_barcode_element_set_align(uint64_t elem, int32_t align);
+int32_t  folio_barcode_element_set_alt_text(uint64_t elem, const char *text);
 void     folio_barcode_element_free(uint64_t elem);
 
 /* ── SVG ──────────────────────────────────────────────────────────── */
@@ -463,6 +466,7 @@ void     folio_svg_free(uint64_t svg);
 uint64_t folio_svg_element_new(uint64_t svg);
 int32_t  folio_svg_element_set_size(uint64_t elem, double w, double h);
 int32_t  folio_svg_element_set_align(uint64_t elem, int32_t align);
+int32_t  folio_svg_element_set_alt_text(uint64_t elem, const char *text);
 void     folio_svg_element_free(uint64_t elem);
 
 /* ── Flex (container) ─────────────────────────────────────────────── */
@@ -516,6 +520,7 @@ double   folio_reader_page_width(uint64_t reader, int32_t page_index);
 double   folio_reader_page_height(uint64_t reader, int32_t page_index);
 
 /* Structured content extraction (returns JSON buffer handles) */
+uint64_t folio_reader_structure_tree(uint64_t reader);               /* JSON buffer, 0 if not tagged */
 uint64_t folio_reader_text_spans(uint64_t reader, int32_t page_index);
 uint64_t folio_reader_images(uint64_t reader, int32_t page_index);
 uint64_t folio_reader_paths(uint64_t reader, int32_t page_index);

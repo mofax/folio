@@ -1258,6 +1258,18 @@ int main(void) {
     void* signedData = folio_buffer_data(signedBuf);
     ASSERT(memcmp(signedData, "%PDF", 4) == 0, "signed output is valid PDF");
 
+    /* Verify signed PDF contains signature markers */
+    char* signedStr = (char*)signedData;
+    int32_t signedLen2 = folio_buffer_len(signedBuf);
+    int hasSigField = 0;
+    for (int32_t i = 0; i < signedLen2 - 4; i++) {
+        if (signedStr[i] == '/' && signedStr[i+1] == 'S' && signedStr[i+2] == 'i' && signedStr[i+3] == 'g') {
+            hasSigField = 1;
+            break;
+        }
+    }
+    ASSERT(hasSigField, "signed PDF contains /Sig field");
+
     folio_buffer_free(signedBuf);
     folio_buffer_free(buf);
     folio_sign_opts_free(signOpts);
@@ -1316,6 +1328,24 @@ int main(void) {
 
     rc = folio_merge_save(merged, "/tmp/folio_manipulated.pdf");
     ASSERT(rc == 0, "manipulated document save succeeds");
+
+    /* Verify manipulated PDF via write-to-buffer */
+    uint64_t manipBuf = folio_merge_write_to_buffer(merged);
+    ASSERT(manipBuf != 0, "manipulated write_to_buffer");
+    ASSERT(memcmp(folio_buffer_data(manipBuf), "%PDF", 4) == 0, "manipulated output is PDF");
+    /* Check /Rotate is present in the output (page 0 was rotated 90) */
+    char* manipStr = (char*)folio_buffer_data(manipBuf);
+    int32_t manipLen2 = folio_buffer_len(manipBuf);
+    int hasRotate = 0;
+    for (int32_t i = 0; i < manipLen2 - 7; i++) {
+        if (manipStr[i] == '/' && manipStr[i+1] == 'R' && manipStr[i+2] == 'o' &&
+            manipStr[i+3] == 't' && manipStr[i+4] == 'a' && manipStr[i+5] == 't' && manipStr[i+6] == 'e') {
+            hasRotate = 1;
+            break;
+        }
+    }
+    ASSERT(hasRotate, "manipulated PDF contains /Rotate");
+    folio_buffer_free(manipBuf);
     folio_merge_free(merged);
 
     /* ===== Stage 35: Structured content extraction ===== */
@@ -1372,16 +1402,72 @@ int main(void) {
     rc = folio_merge_save(flatMerged, "/tmp/folio_flattened.pdf");
     ASSERT(rc == 0, "flattened document save succeeds");
 
-    folio_merge_free(flatMerged);
-    folio_reader_free(flatRdr);
+    /* Verify the flattened PDF has no AcroForm */
+    uint64_t flatBuf = folio_merge_write_to_buffer(flatMerged);
+    ASSERT(flatBuf != 0, "flattened write_to_buffer");
+    char* flatStr = (char*)folio_buffer_data(flatBuf);
+    int32_t flatLen2 = folio_buffer_len(flatBuf);
+    int hasAcroForm = 0;
+    for (int32_t i = 0; i < flatLen2 - 9; i++) {
+        if (flatStr[i] == '/' && flatStr[i+1] == 'A' && flatStr[i+2] == 'c' &&
+            flatStr[i+3] == 'r' && flatStr[i+4] == 'o' && flatStr[i+5] == 'F') {
+            hasAcroForm = 1;
+            break;
+        }
+    }
+    ASSERT(!hasAcroForm, "flattened PDF has no /AcroForm");
+    folio_buffer_free(flatBuf);
 
-    /* Verify the flattened PDF has no form fields */
     uint64_t flatCheck = folio_reader_open("/tmp/folio_flattened.pdf");
     ASSERT(flatCheck != 0, "re-open flattened PDF");
     ASSERT(folio_reader_page_count(flatCheck) >= 1, "flattened PDF has pages");
     folio_reader_free(flatCheck);
 
-    /* ===== Stage 37: Encryption with permissions ===== */
+    folio_merge_free(flatMerged);
+    folio_reader_free(flatRdr);
+
+    /* ===== Stage 37: PDF/UA tagged PDF ===== */
+    printf("Testing PDF/UA tagged PDF...\n");
+    doc = folio_document_new_letter();
+    helv = folio_font_helvetica();
+
+    rc = folio_document_set_tagged(doc, 1);
+    ASSERT(rc == 0, "set_tagged succeeds");
+
+    /* Image with alt text */
+    uint64_t tagQr = folio_barcode_qr("https://folio.dev");
+    uint64_t tagQrElem = folio_barcode_element_new(tagQr, 100.0);
+    rc = folio_barcode_element_set_alt_text(tagQrElem, "QR code linking to folio.dev");
+    ASSERT(rc == 0, "barcode_element_set_alt_text succeeds");
+    folio_document_add(doc, tagQrElem);
+
+    /* Div with custom tag */
+    div = folio_div_new();
+    rc = folio_div_set_tag(div, "Sect");
+    ASSERT(rc == 0, "div_set_tag succeeds");
+    para = folio_paragraph_new("Section content", helv, 12.0);
+    folio_div_add(div, para);
+    folio_document_add(doc, div);
+
+    buf = folio_document_write_to_buffer(doc);
+    ASSERT(buf != 0, "tagged doc write to buffer");
+    folio_document_free(doc);
+
+    /* Read back and check structure tree */
+    uint64_t tagRdr = folio_reader_parse(folio_buffer_data(buf), folio_buffer_len(buf));
+    ASSERT(tagRdr != 0, "reader_parse tagged doc");
+
+    uint64_t treeBuf = folio_reader_structure_tree(tagRdr);
+    ASSERT(treeBuf != 0, "reader_structure_tree returns buffer");
+    ASSERT(folio_buffer_len(treeBuf) > 10, "structure tree JSON non-trivial");
+    char* treeJson = (char*)folio_buffer_data(treeBuf);
+    ASSERT(treeJson[0] == '{', "structure tree JSON starts with {");
+    folio_buffer_free(treeBuf);
+
+    folio_reader_free(tagRdr);
+    folio_buffer_free(buf);
+
+    /* ===== Stage 38: Encryption with permissions ===== */
     printf("Testing encryption with permissions...\n");
     doc = folio_document_new_letter();
     folio_document_set_title(doc, "Encrypted");
@@ -1394,8 +1480,23 @@ int main(void) {
         (1 << 2) | (1 << 4) /* PRINT | EXTRACT */);
     ASSERT(rc == 0, "set_encryption_with_permissions succeeds");
 
-    rc = folio_document_save(doc, "/tmp/folio_cabi_encrypted.pdf");
-    ASSERT(rc == 0, "encrypted document save succeeds");
+    buf = folio_document_write_to_buffer(doc);
+    ASSERT(buf != 0, "encrypted doc write to buffer");
+    ASSERT(memcmp(folio_buffer_data(buf), "%PDF", 4) == 0, "encrypted output is PDF");
+    /* Verify /Encrypt dict present */
+    char* encStr = (char*)folio_buffer_data(buf);
+    int32_t encLen = folio_buffer_len(buf);
+    int hasEncrypt = 0;
+    for (int32_t i = 0; i < encLen - 8; i++) {
+        if (encStr[i] == '/' && encStr[i+1] == 'E' && encStr[i+2] == 'n' &&
+            encStr[i+3] == 'c' && encStr[i+4] == 'r' && encStr[i+5] == 'y' &&
+            encStr[i+6] == 'p' && encStr[i+7] == 't') {
+            hasEncrypt = 1;
+            break;
+        }
+    }
+    ASSERT(hasEncrypt, "encrypted PDF contains /Encrypt dictionary");
+    folio_buffer_free(buf);
     folio_document_free(doc);
 
     /* Summary */

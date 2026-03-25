@@ -11,10 +11,11 @@ import (
 
 // ImageElement is a layout element that places an image in the document flow.
 type ImageElement struct {
-	img    *folioimage.Image
-	width  float64 // explicit width (0 = auto)
-	height float64 // explicit height (0 = auto)
-	align  Align
+	img     *folioimage.Image
+	width   float64 // explicit width (0 = auto)
+	height  float64 // explicit height (0 = auto)
+	align   Align
+	altText string // alternative text for accessibility (PDF/UA)
 }
 
 // NewImageElement creates a layout element from an Image.
@@ -38,6 +39,13 @@ func (ie *ImageElement) SetSize(width, height float64) *ImageElement {
 // SetAlign sets horizontal alignment of the image.
 func (ie *ImageElement) SetAlign(a Align) *ImageElement {
 	ie.align = a
+	return ie
+}
+
+// SetAltText sets alternative text for accessibility (PDF/UA).
+// Screen readers use this to describe the image to visually impaired users.
+func (ie *ImageElement) SetAltText(text string) *ImageElement {
+	ie.altText = text
 	return ie
 }
 
@@ -141,11 +149,12 @@ func (ie *ImageElement) PlanLayout(area LayoutArea) LayoutPlan {
 		Status:   LayoutFull,
 		Consumed: h,
 		Blocks: []PlacedBlock{{
-			X:      x,
-			Y:      0,
-			Width:  w,
-			Height: h,
-			Tag:    "Figure",
+			X:       x,
+			Y:       0,
+			Width:   w,
+			Height:  h,
+			Tag:     "Figure",
+			AltText: ie.altText,
 			Draw: func(ctx DrawContext, absX, absTopY float64) {
 				resName := registerImage(ctx.Page, capturedImg)
 				bottomY := absTopY - capturedH
