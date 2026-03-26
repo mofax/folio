@@ -185,7 +185,12 @@ func (p *Paragraph) Layout(maxWidth float64) []Line {
 		spaceW := measurer.MeasureString(" ", run.FontSize) + run.WordSpacing
 		words := splitWords(run.Text)
 
+		nextLineBreak := false
 		for _, w := range words {
+			if w == lineBreakMarker {
+				nextLineBreak = true
+				continue
+			}
 			wordW := measurer.MeasureString(w, run.FontSize)
 			// Account for letter-spacing: adds extra space after each character except last.
 			if run.LetterSpacing != 0 && len([]rune(w)) > 1 {
@@ -199,6 +204,7 @@ func (p *Paragraph) Layout(maxWidth float64) []Line {
 				FontSize:        run.FontSize,
 				Color:           run.Color,
 				Decoration:      run.Decoration,
+				LineBreak:       nextLineBreak,
 				DecorationColor: run.DecorationColor,
 				DecorationStyle: run.DecorationStyle,
 				SpaceAfter:      spaceW,
@@ -207,6 +213,7 @@ func (p *Paragraph) Layout(maxWidth float64) []Line {
 				BaselineShift:   run.BaselineShift,
 				LinkURI:         run.LinkURI,
 			})
+			nextLineBreak = false
 		}
 		if run.FontSize > maxFontSize {
 			maxFontSize = run.FontSize
@@ -247,6 +254,17 @@ func (p *Paragraph) Layout(maxWidth float64) []Line {
 	}
 
 	for i := 1; i < len(measured); i++ {
+		// Forced line break from \n.
+		if measured[i].LineBreak {
+			lines = append(lines, Line{
+				Words: slices.Clone(measured[lineStart:i]),
+				Width: lineWidth, Height: lineHeight, SpaceW: measured[lineStart].SpaceAfter,
+			})
+			lineStart = i
+			lineWidth = measured[i].Width
+			effectiveMax = maxWidth
+			continue
+		}
 		spaceW := measured[i-1].SpaceAfter
 		candidate := lineWidth + spaceW + measured[i].Width
 		if candidate > effectiveMax && lineStart < i {
@@ -574,9 +592,24 @@ func (p *Paragraph) MaxWidth() float64 {
 
 // splitWords splits text on whitespace, collapsing consecutive whitespace.
 // Newlines are treated as word separators (same as HTML/CSS normal whitespace).
+// splitWords splits text into words, preserving \n as a lineBreakMarker
+// sentinel that forces a line break during word-wrapping.
 func splitWords(text string) []string {
-	return strings.Fields(text)
+	// Split on newlines first, then split each line into words.
+	lines := strings.Split(text, "\n")
+	var result []string
+	for i, line := range lines {
+		if i > 0 {
+			result = append(result, lineBreakMarker)
+		}
+		result = append(result, strings.Fields(line)...)
+	}
+	return result
 }
+
+// lineBreakMarker is a sentinel value in the word list that signals a
+// forced line break from a \n character in the source text.
+const lineBreakMarker = "\x00linebreak"
 
 // PlanLayout implements Element. It computes word-wrapped lines that fit
 // within the available area. If the paragraph doesn't fit entirely, it
@@ -794,7 +827,12 @@ func (p *Paragraph) measureWords(maxWidth float64) ([]Word, float64) {
 		}
 
 		words := splitWords(text)
+		nextLineBreak := false
 		for _, w := range words {
+			if w == lineBreakMarker {
+				nextLineBreak = true
+				continue
+			}
 			wordW := measurer.MeasureString(w, run.FontSize)
 			if run.LetterSpacing != 0 && len([]rune(w)) > 1 {
 				wordW += run.LetterSpacing * float64(len([]rune(w))-1)
@@ -814,7 +852,9 @@ func (p *Paragraph) measureWords(maxWidth float64) ([]Word, float64) {
 				WordSpacing:     run.WordSpacing,
 				BaselineShift:   run.BaselineShift,
 				LinkURI:         run.LinkURI,
+				LineBreak:       nextLineBreak,
 			})
+			nextLineBreak = false
 		}
 		if run.FontSize > maxFontSize {
 			maxFontSize = run.FontSize
@@ -881,13 +921,21 @@ func (p *Paragraph) wrapWords(words []Word, maxWidth float64) [][]Word {
 	lw := words[0].Width
 
 	for i := 1; i < len(words); i++ {
+		// Forced line break from \n in source text.
+		if words[i].LineBreak {
+			lines = append(lines, slices.Clone(words[lineStart:i]))
+			lineStart = i
+			lw = words[i].Width
+			effectiveWidth = maxWidth
+			continue
+		}
 		spaceW := words[i-1].SpaceAfter
 		candidate := lw + spaceW + words[i].Width
 		if candidate > effectiveWidth && lineStart < i {
 			lines = append(lines, slices.Clone(words[lineStart:i]))
 			lineStart = i
 			lw = words[i].Width
-			effectiveWidth = maxWidth // subsequent lines use full width
+			effectiveWidth = maxWidth
 		} else {
 			lw = candidate
 		}

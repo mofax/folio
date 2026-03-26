@@ -70,12 +70,12 @@ func main() {
 	doc.Add(layout.NewAreaBreak())
 	doc.Add(layout.NewHeading("Executive Summary", layout.H1))
 	doc.Add(body(
-		"Fiscal year 2026 marked a transformational period for Apex Capital Partners. "+
-			"Revenue grew 22% year-over-year to $28.3M, driven by strong performance "+
+		"Fiscal year 2026 marked a transformational period for Apex Capital Partners. " +
+			"Revenue grew 22% year-over-year to $28.3M, driven by strong performance " +
 			"in advisory services and a strategic expansion into the Asia-Pacific region."))
 	doc.Add(body(
-		"Operating margin improved to 30%, reflecting disciplined cost management "+
-			"and technology-driven efficiency gains. Client retention remained strong "+
+		"Operating margin improved to 30%, reflecting disciplined cost management " +
+			"and technology-driven efficiency gains. Client retention remained strong " +
 			"at 97.2%, and we welcomed 23 new institutional clients during the year."))
 
 	// Callout box

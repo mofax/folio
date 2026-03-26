@@ -514,4 +514,3 @@ func (rs *rewriteState) charBounds(xOffset, charWidth float64) Box {
 func (rs *rewriteState) advanceTextPosition(textSpaceWidth float64) {
 	rs.tm[4] += textSpaceWidth * rs.fontSize
 }
-

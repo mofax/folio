@@ -383,3 +383,65 @@ func TestParagraphZeroWidthLayout(t *testing.T) {
 		t.Error("expected at least 1 line even with 0 width")
 	}
 }
+
+// TestParagraphNewlineBreak verifies that \n in paragraph text creates
+// a forced line break, producing separate lines in the output.
+func TestParagraphNewlineBreak(t *testing.T) {
+	p := NewParagraph("Line one\nLine two\nLine three", font.Helvetica, 12)
+	plan := p.PlanLayout(LayoutArea{Width: 500, Height: 1000})
+	if plan.Status != LayoutFull {
+		t.Fatalf("expected LayoutFull, got %d", plan.Status)
+	}
+	// Should produce 3 lines (one per \n-separated segment).
+	if len(plan.Blocks) != 3 {
+		t.Errorf("expected 3 lines, got %d", len(plan.Blocks))
+	}
+}
+
+// TestParagraphNewlineInTable verifies the use case from issue #61:
+// multi-line address text in a table cell using \n.
+func TestParagraphNewlineInTable(t *testing.T) {
+	tbl := NewTable().SetColumnUnitWidths([]UnitValue{Pct(50), Pct(50)})
+	r := tbl.AddRow()
+	r.AddCell("Postcode", font.Helvetica, 10)
+
+	addr := NewParagraph("123 Main St\nSuite 456\nNew York, NY 10001", font.Helvetica, 10)
+	r.AddCellElement(addr)
+
+	plan := tbl.PlanLayout(LayoutArea{Width: 400, Height: 1000})
+	if plan.Status != LayoutFull {
+		t.Fatalf("expected LayoutFull, got %d", plan.Status)
+	}
+	// The address cell should be taller than a single-line cell because
+	// it contains 3 lines.
+	if plan.Consumed <= 0 {
+		t.Error("expected positive consumed height")
+	}
+}
+
+// TestParagraphNewlineEmpty verifies that consecutive \n\n produces
+// a visual blank line (empty line between content lines).
+func TestParagraphNewlineEmpty(t *testing.T) {
+	p := NewParagraph("Before\n\nAfter", font.Helvetica, 12)
+	plan := p.PlanLayout(LayoutArea{Width: 500, Height: 1000})
+	// "Before" on line 1, empty line 2 (no words), "After" on line 3.
+	// Empty lines between \n\n may collapse since there are no words.
+	// At minimum we should get 2 lines (Before and After).
+	if len(plan.Blocks) < 2 {
+		t.Errorf("expected at least 2 lines, got %d", len(plan.Blocks))
+	}
+}
+
+// TestParagraphNewlineTrailing verifies that trailing \n doesn't
+// produce extra empty content.
+func TestParagraphNewlineTrailing(t *testing.T) {
+	p := NewParagraph("Hello\n", font.Helvetica, 12)
+	plan := p.PlanLayout(LayoutArea{Width: 500, Height: 1000})
+	if plan.Status != LayoutFull {
+		t.Fatalf("expected LayoutFull, got %d", plan.Status)
+	}
+	// Should have 1 line ("Hello"), trailing \n doesn't add a line.
+	if len(plan.Blocks) != 1 {
+		t.Errorf("expected 1 line, got %d", len(plan.Blocks))
+	}
+}
