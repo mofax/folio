@@ -76,8 +76,8 @@ func main() {
 	r3, _ := reader.Parse(pdf)
 	emailPattern := regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 	m2, err := reader.RedactPattern(r3, emailPattern, &reader.RedactOptions{
-		FillColor:   [3]float64{0.5, 0, 0},
-		OverlayText: "[EMAIL]",
+		FillColor:    [3]float64{0.5, 0, 0},
+		OverlayText:  "[EMAIL]",
 		OverlayColor: [3]float64{1, 1, 1},
 	})
 	if err != nil {

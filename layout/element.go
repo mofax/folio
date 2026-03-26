@@ -237,6 +237,10 @@ type Word struct {
 	WordSpacing   float64 // extra inter-word space added to SpaceAfter
 	BaselineShift float64 // vertical offset (positive = up, negative = down)
 
+	// LineBreak forces a new line before this word during word-wrapping.
+	// Used to honor explicit \n characters in paragraph text.
+	LineBreak bool
+
 	// LinkURI is the hyperlink target for this word. If non-empty, the
 	// renderer creates a link annotation covering this word's area.
 	LinkURI string

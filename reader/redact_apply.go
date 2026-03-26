@@ -84,7 +84,9 @@ func applyRedaction(m *Modifier, pageIdx int, rewritten []byte, overlay *core.Pd
 
 // ensureHelvFont adds a Helvetica font entry to the page's Resources
 // under the name "Helv" if not already present.
-func ensureHelvFont(pageDict *core.PdfDictionary, w interface{ AddObject(core.PdfObject) *core.PdfIndirectReference }) {
+func ensureHelvFont(pageDict *core.PdfDictionary, w interface {
+	AddObject(core.PdfObject) *core.PdfIndirectReference
+}) {
 	resources := pageDict.Get("Resources")
 	var resDict *core.PdfDictionary
 	if resources != nil {
