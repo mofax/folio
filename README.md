@@ -1,7 +1,7 @@
 # Folio
 
-A modern PDF library for Go — layout engine, HTML to PDF,
-forms, digital signatures, barcodes, and PDF/A compliance.
+A modern PDF library for Go — layout engine, HTML to PDF, redaction,
+forms, digital signatures, barcodes, page import, and PDF/A compliance.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/carlos7ags/folio.svg)](https://pkg.go.dev/github.com/carlos7ags/folio)
 [![CI](https://github.com/carlos7ags/folio/actions/workflows/ci.yml/badge.svg)](https://github.com/carlos7ags/folio/actions)
@@ -252,6 +252,52 @@ m.SaveTo("merged.pdf")
 
 ---
 
+## Redaction
+
+Permanently remove sensitive text from PDFs — not just a visual overlay,
+but actual removal of text operators from content streams.
+
+```go
+// By text search
+m, _ := reader.RedactText(r, []string{"John Doe", "555-12-3456"}, nil)
+m.SaveTo("redacted.pdf")
+
+// By regex (e.g. SSNs)
+re := regexp.MustCompile(`\d{3}-\d{2}-\d{4}`)
+m, _ := reader.RedactPattern(r, re, &reader.RedactOptions{
+    OverlayText: "REDACTED",
+    StripMetadata: true,
+})
+m.SaveTo("redacted.pdf")
+```
+
+Character-level precision — partial words within a line are removed without
+affecting adjacent text. See [`examples/redact/`](examples/redact/) for a full demo.
+
+---
+
+## Page Import
+
+Load existing PDFs as templates and add dynamic content on top — the standard
+workflow for invoices, receipts, certificates, and letterheads.
+
+```go
+r, _ := reader.Open("template.pdf")
+imp, _ := reader.ExtractPageImport(r, 0)
+
+doc := document.NewDocument(document.PageSizeLetter)
+p := doc.AddPage()
+p.ImportPage(imp.ContentStream, imp.Resources, imp.Width, imp.Height)
+p.AddText("Invoice #1042", font.HelveticaBold, 14, 72, 700)
+doc.Save("filled.pdf")
+```
+
+All resources (fonts, images, color spaces) are fully resolved and
+self-contained — works with PDFs from any source.
+See [`examples/import-page/`](examples/import-page/) for a receipt-filling demo.
+
+---
+
 ## Headers, Footers, Watermarks
 
 ```go
@@ -312,6 +358,30 @@ folio blank -o empty.pdf -size a4 -pages 5
 
 ---
 
+## C Shared Library
+
+Folio exports a C ABI (`libfolio.so` / `.dylib` / `.dll`) with 346 functions,
+usable from Python, Ruby, C#, Java, or any language with FFI support.
+
+```bash
+CGO_ENABLED=1 go build -buildmode=c-shared -o libfolio.so ./export/
+```
+
+```c
+#include "folio.h"
+
+uint64_t doc = folio_document_new(595.28, 841.89);
+uint64_t page = folio_document_add_page(doc);
+folio_page_add_text(page, "Hello from C", folio_font_helvetica(), 24, 72, 750);
+folio_document_save(doc, "hello.pdf");
+folio_document_free(doc);
+```
+
+Pre-built binaries for Linux, macOS, and Windows are attached to each
+[GitHub release](https://github.com/carlos7ags/folio/releases).
+
+---
+
 ## Architecture
 
 ```
@@ -333,7 +403,7 @@ PlacedBlock.Draw(ctx, x, y) -> PDF operators
 folio/
   core/       PDF object model
   content/    Content stream builder
-  document/   Document API (pages, outlines, PDF/A, watermarks)
+  document/   Document API (pages, outlines, PDF/A, watermarks, page import)
   font/       Standard 14 + TrueType embedding + subsetting
   image/      JPEG, PNG, TIFF
   layout/     Layout engine (all elements + rendering)
@@ -342,9 +412,30 @@ folio/
   html/       HTML + CSS to PDF conversion
   svg/        SVG to PDF rendering
   sign/       Digital signatures (PAdES, CMS, timestamps)
-  reader/     PDF parser (read, extract, merge)
+  reader/     PDF parser, text extraction, merge, redaction, page import
+  export/     C shared library (346 exported functions)
   cmd/folio/  CLI tool
 ```
+
+---
+
+## Examples
+
+Each [`examples/`](examples/) subdirectory is a self-contained `go run` demo:
+
+| Example | What it shows |
+|---|---|
+| [`hello`](examples/hello/) | Minimal one-page PDF |
+| [`fonts`](examples/fonts/) | Standard, custom, and Unicode fonts (CJK, Cyrillic) |
+| [`links`](examples/links/) | Hyperlinks, bookmarks, internal navigation |
+| [`forms`](examples/forms/) | Interactive AcroForm fields |
+| [`html-to-pdf`](examples/html-to-pdf/) | Rich HTML+CSS report with flexbox and tables |
+| [`import-page`](examples/import-page/) | Load existing PDF as template, fill in data |
+| [`merge`](examples/merge/) | Parse, merge, and extract text |
+| [`redact`](examples/redact/) | Permanently remove sensitive text |
+| [`report`](examples/report/) | Multi-page report with layout API |
+| [`sign`](examples/sign/) | PAdES digital signature |
+| [`zugferd`](examples/zugferd/) | PDF/A-3B invoice with Factur-X XML |
 
 ---
 
