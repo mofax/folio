@@ -68,13 +68,22 @@ func drawTextLine(ctx DrawContext, words []Word, x, baselineY, maxWidth float64,
 			curColor = word.Color
 		}
 
+		wordY := baselineY + word.BaselineShift
+
+		// Draw text-shadow before the main text (shadow renders behind).
+		if word.TextShadow != nil {
+			drawTextShadow(ctx, word, curX, wordY)
+			// Restore fill color after shadow drew with its own color.
+			setFillColor(ctx.Stream, word.Color)
+			curColor = word.Color
+		}
+
 		ctx.Stream.BeginText()
 		resName := registerFont(ctx.Page, word)
 		ctx.Stream.SetFont(resName, word.FontSize)
 		if word.LetterSpacing != 0 {
 			ctx.Stream.SetCharSpacing(word.LetterSpacing)
 		}
-		wordY := baselineY + word.BaselineShift
 		ctx.Stream.MoveText(curX, wordY)
 
 		if word.Embedded != nil {
@@ -365,6 +374,46 @@ func registerOpacity(page *PageResult, opacity float64) string {
 	name := fmt.Sprintf("GS%d", len(page.ExtGStates)+1)
 	page.ExtGStates = append(page.ExtGStates, ExtGStateEntry{Name: name, Opacity: opacity})
 	return name
+}
+
+// drawTextShadow draws a text shadow behind a word by re-drawing the same
+// text at an offset with the shadow color. For blur > 0, a semi-transparent
+// duplicate is drawn at a slightly larger offset to approximate the blur.
+func drawTextShadow(ctx DrawContext, word Word, x, y float64) {
+	shadow := word.TextShadow
+	if shadow == nil {
+		return
+	}
+	ctx.Stream.SaveState()
+
+	// Shadow offset: CSS offsetY positive = down, PDF y-axis positive = up.
+	sx := x + shadow.OffsetX
+	sy := y - shadow.OffsetY
+
+	// For blur, use reduced opacity to simulate the effect.
+	if shadow.Blur > 0 {
+		gsName := registerOpacity(ctx.Page, 0.5)
+		ctx.Stream.SetExtGState(gsName)
+	}
+
+	setFillColor(ctx.Stream, shadow.Color)
+	ctx.Stream.BeginText()
+	resName := registerFont(ctx.Page, word)
+	ctx.Stream.SetFont(resName, word.FontSize)
+	if word.LetterSpacing != 0 {
+		ctx.Stream.SetCharSpacing(word.LetterSpacing)
+	}
+	ctx.Stream.MoveText(sx, sy)
+	if word.Embedded != nil {
+		drawWordEmbedded(ctx.Stream, word)
+	} else {
+		drawWordStandard(ctx.Stream, word)
+	}
+	if word.LetterSpacing != 0 {
+		ctx.Stream.SetCharSpacing(0)
+	}
+	ctx.Stream.EndText()
+	ctx.Stream.RestoreState()
 }
 
 // drawBoxShadow draws a box-shadow approximation behind an element.

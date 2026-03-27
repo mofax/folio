@@ -109,12 +109,13 @@ type TextRun struct {
 	FontSize        float64
 	Color           Color
 	Decoration      TextDecoration
-	DecorationColor *Color  // if non-nil, decoration uses this color instead of text Color
-	DecorationStyle string  // "solid" (default), "dashed", "dotted", "double", "wavy"
-	LetterSpacing   float64 // extra space between characters (points, from CSS letter-spacing)
-	WordSpacing     float64 // extra space between words (points, from CSS word-spacing)
-	BaselineShift   float64 // vertical offset in points (positive = up for super, negative = down for sub)
-	LinkURI         string  // if non-empty, this run is part of a hyperlink
+	DecorationColor *Color      // if non-nil, decoration uses this color instead of text Color
+	DecorationStyle string      // "solid" (default), "dashed", "dotted", "double", "wavy"
+	LetterSpacing   float64     // extra space between characters (points, from CSS letter-spacing)
+	WordSpacing     float64     // extra space between words (points, from CSS word-spacing)
+	BaselineShift   float64     // vertical offset in points (positive = up for super, negative = down for sub)
+	LinkURI         string      // if non-empty, this run is part of a hyperlink
+	TextShadow      *TextShadow // if non-nil, draws a shadow behind the text
 }
 
 // Run creates a TextRun with a standard font.
@@ -178,6 +179,14 @@ const (
 	VAlignBottom
 )
 
+// TextShadow represents a CSS text-shadow effect.
+type TextShadow struct {
+	OffsetX float64 // horizontal offset (positive = right)
+	OffsetY float64 // vertical offset (positive = down in CSS, converted to PDF up)
+	Blur    float64 // blur radius (approximated via opacity)
+	Color   Color   // shadow color
+}
+
 // TextDecoration specifies text decoration (underline, strikethrough).
 type TextDecoration int
 
@@ -236,6 +245,8 @@ type Word struct {
 	LetterSpacing float64 // extra inter-character space (Tc operator)
 	WordSpacing   float64 // extra inter-word space added to SpaceAfter
 	BaselineShift float64 // vertical offset (positive = up, negative = down)
+
+	TextShadow *TextShadow // if non-nil, draws a shadow behind the text
 
 	// LineBreak forces a new line before this word during word-wrapping.
 	// Used to honor explicit \n characters in paragraph text.

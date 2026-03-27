@@ -11,6 +11,11 @@ import (
 	folioimage "github.com/carlos7ags/folio/image"
 )
 
+// makeCSSFetcher is a stub for WASM builds — returns nil (no HTTP fetching).
+func makeCSSFetcher(_ URLPolicy) func(string) ([]byte, error) {
+	return nil
+}
+
 // fetchImage is a stub for WASM builds where net/http is not available.
 // HTTP/HTTPS image URLs cannot be fetched in the browser. Use base64
 // data URIs instead: <img src="data:image/png;base64,...">

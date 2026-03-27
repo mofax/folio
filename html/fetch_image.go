@@ -15,6 +15,28 @@ import (
 	folioimage "github.com/carlos7ags/folio/image"
 )
 
+// makeCSSFetcher returns a function that fetches CSS from a URL, protected
+// by the given URLPolicy. Returns nil if no URL fetching should be attempted.
+func makeCSSFetcher(policy URLPolicy) func(string) ([]byte, error) {
+	return func(url string) ([]byte, error) {
+		if policy != nil {
+			if err := policy(url); err != nil {
+				return nil, err
+			}
+		}
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("fetch stylesheet %s: %w", url, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("fetch stylesheet %s: HTTP %d", url, resp.StatusCode)
+		}
+		// Limit to 10MB for stylesheets.
+		return io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	}
+}
+
 // fetchImage downloads an image from a URL and returns a folio Image.
 // Supports JPEG, PNG, and TIFF. Detects format from Content-Type header
 // or file extension, falling back to content sniffing.

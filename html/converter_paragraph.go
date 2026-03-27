@@ -130,6 +130,7 @@ func (c *converter) convertText(n *html.Node, style computedStyle) []layout.Elem
 		LetterSpacing:   style.LetterSpacing,
 		WordSpacing:     style.WordSpacing,
 		BaselineShift:   baselineShiftFromStyle(style),
+		TextShadow:      textShadowFromStyle(style),
 	}
 	p := layout.NewStyledParagraph(run)
 	p.SetAlign(style.TextAlign)
@@ -251,6 +252,7 @@ func (c *converter) collectRuns(n *html.Node, style computedStyle) []layout.Text
 				LetterSpacing:   style.LetterSpacing,
 				WordSpacing:     style.WordSpacing,
 				BaselineShift:   baselineShiftFromStyle(style),
+				TextShadow:      textShadowFromStyle(style),
 			}
 			runs = append(runs, run)
 		case html.ElementNode:

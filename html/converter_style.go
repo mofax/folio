@@ -595,9 +595,49 @@ func (c *converter) applyProperty(prop, val string, style *computedStyle) {
 			style.FontFamily = ff
 		}
 	case "border-radius":
-		if l := parseLength(val); l != nil {
-			style.BorderRadius = l.toPoints(0, style.FontSize)
+		parts := strings.Fields(val)
+		switch len(parts) {
+		case 1:
+			if l := parseLength(parts[0]); l != nil {
+				v := l.toPoints(0, style.FontSize)
+				style.BorderRadius = v
+				style.BorderRadiusTL = v
+				style.BorderRadiusTR = v
+				style.BorderRadiusBR = v
+				style.BorderRadiusBL = v
+			}
+		case 2:
+			tl := parseLengthPt(parts[0], style.FontSize)
+			br := parseLengthPt(parts[1], style.FontSize)
+			style.BorderRadiusTL = tl
+			style.BorderRadiusBR = tl
+			style.BorderRadiusTR = br
+			style.BorderRadiusBL = br
+			style.BorderRadius = tl
+		case 3:
+			tl := parseLengthPt(parts[0], style.FontSize)
+			tr := parseLengthPt(parts[1], style.FontSize)
+			bl := parseLengthPt(parts[2], style.FontSize)
+			style.BorderRadiusTL = tl
+			style.BorderRadiusTR = tr
+			style.BorderRadiusBR = bl
+			style.BorderRadiusBL = tr
+			style.BorderRadius = tl
+		case 4:
+			style.BorderRadiusTL = parseLengthPt(parts[0], style.FontSize)
+			style.BorderRadiusTR = parseLengthPt(parts[1], style.FontSize)
+			style.BorderRadiusBR = parseLengthPt(parts[2], style.FontSize)
+			style.BorderRadiusBL = parseLengthPt(parts[3], style.FontSize)
+			style.BorderRadius = style.BorderRadiusTL
 		}
+	case "border-top-left-radius":
+		style.BorderRadiusTL = parseLengthPt(val, style.FontSize)
+	case "border-top-right-radius":
+		style.BorderRadiusTR = parseLengthPt(val, style.FontSize)
+	case "border-bottom-right-radius":
+		style.BorderRadiusBR = parseLengthPt(val, style.FontSize)
+	case "border-bottom-left-radius":
+		style.BorderRadiusBL = parseLengthPt(val, style.FontSize)
 	case "opacity":
 		if v, err := strconv.ParseFloat(strings.TrimSpace(val), 64); err == nil {
 			if v < 0 {
@@ -628,6 +668,8 @@ func (c *converter) applyProperty(prop, val string, style *computedStyle) {
 		if v == "content-box" || v == "border-box" {
 			style.BoxSizing = v
 		}
+	case "text-shadow":
+		style.TextShadow = parseBoxShadow(strings.TrimSpace(strings.ToLower(val)), style.FontSize)
 	case "visibility":
 		v := strings.TrimSpace(strings.ToLower(val))
 		if v == "visible" || v == "hidden" || v == "collapse" {
@@ -656,9 +698,9 @@ func (c *converter) applyProperty(prop, val string, style *computedStyle) {
 			style.ZIndexSet = true
 		}
 
-	// Box shadow
+	// Box shadow (supports comma-separated multiple shadows)
 	case "box-shadow":
-		style.BoxShadow = parseBoxShadow(val, style.FontSize)
+		style.BoxShadows = parseBoxShadows(val, style.FontSize)
 
 	// Text overflow
 	case "text-overflow":
@@ -703,6 +745,19 @@ func (c *converter) applyProperty(prop, val string, style *computedStyle) {
 			}
 		}
 
+	case "column-rule":
+		style.ColumnRuleWidth, style.ColumnRuleStyle, style.ColumnRuleColor = parseColumnRule(val, style.FontSize)
+	case "column-rule-width":
+		if l := parseLength(val); l != nil {
+			style.ColumnRuleWidth = l.toPoints(0, style.FontSize)
+		}
+	case "column-rule-style":
+		style.ColumnRuleStyle = strings.TrimSpace(strings.ToLower(val))
+	case "column-rule-color":
+		if c, ok := parseColor(val); ok {
+			style.ColumnRuleColor = c
+		}
+
 	// CSS transforms
 	case "transform":
 		style.Transform = strings.TrimSpace(val)
@@ -743,6 +798,7 @@ func (c *converter) generatePseudoElement(text string, style computedStyle) layo
 		LetterSpacing:   style.LetterSpacing,
 		WordSpacing:     style.WordSpacing,
 		BaselineShift:   baselineShiftFromStyle(style),
+		TextShadow:      textShadowFromStyle(style),
 	}
 	p := layout.NewStyledParagraph(run)
 	p.SetAlign(style.TextAlign)
@@ -1127,4 +1183,49 @@ func parseBoxShadow(val string, fontSize float64) *boxShadow {
 	}
 
 	return bs
+}
+
+// parseBoxShadows parses a CSS box-shadow value that may contain multiple
+// comma-separated shadows. Commas inside function calls (e.g. rgba()) are
+// not treated as separators.
+func parseBoxShadows(val string, fontSize float64) []boxShadow {
+	val = strings.TrimSpace(strings.ToLower(val))
+	if val == "none" || val == "" {
+		return nil
+	}
+
+	// Split on commas that are not inside parentheses.
+	parts := splitTopLevelCommas(val)
+	var shadows []boxShadow
+	for _, part := range parts {
+		if bs := parseBoxShadow(strings.TrimSpace(part), fontSize); bs != nil {
+			shadows = append(shadows, *bs)
+		}
+	}
+	return shadows
+}
+
+// splitTopLevelCommas splits a string on commas that are not inside
+// parentheses. This handles cases like "rgba(0,0,0,0.5) 2px 2px, 0 0 5px red".
+func splitTopLevelCommas(s string) []string {
+	var parts []string
+	depth := 0
+	start := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, s[start:])
+	return parts
 }

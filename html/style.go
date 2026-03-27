@@ -125,12 +125,19 @@ type computedStyle struct {
 	VerticalAlign  string  // "top", "middle", "bottom" (for table cells)
 
 	// Visual effects
-	BorderRadius float64 // corner radius (points, 0 = sharp)
-	Opacity      float64 // 0..1 (0 = default, meaning "not set")
-	Overflow     string  // "visible", "hidden"
+	BorderRadius   float64 // uniform corner radius (points, 0 = sharp)
+	BorderRadiusTL float64 // per-corner: top-left
+	BorderRadiusTR float64 // per-corner: top-right
+	BorderRadiusBR float64 // per-corner: bottom-right
+	BorderRadiusBL float64 // per-corner: bottom-left
+	Opacity        float64 // 0..1 (0 = default, meaning "not set")
+	Overflow       string  // "visible", "hidden"
 
-	// Box shadow
-	BoxShadow *boxShadow
+	// Box shadow (multiple shadows supported, drawn bottom-to-top)
+	BoxShadows []boxShadow
+
+	// Text shadow
+	TextShadow *boxShadow // reuses boxShadow struct (same fields minus Inset)
 
 	// Text overflow
 	TextOverflow string // "clip" (default), "ellipsis"
@@ -142,8 +149,11 @@ type computedStyle struct {
 	OutlineOffset float64
 
 	// Columns
-	ColumnCount int
-	ColumnGap   float64
+	ColumnCount     int
+	ColumnGap       float64
+	ColumnRuleWidth float64
+	ColumnRuleStyle string // "solid", "dashed", "dotted"
+	ColumnRuleColor layout.Color
 
 	// Text decoration extensions
 	TextDecorationColor *layout.Color

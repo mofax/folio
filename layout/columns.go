@@ -3,6 +3,13 @@
 
 package layout
 
+// ColumnRule defines a visual separator drawn between columns.
+type ColumnRule struct {
+	Width float64 // line width in points (default 0 = no rule)
+	Color Color   // line color (default black)
+	Style string  // "solid" (default), "dashed", "dotted"
+}
+
 // Columns is a block-level element that arranges child elements
 // side by side in equal-width (or custom-width) columns.
 type Columns struct {
@@ -10,6 +17,7 @@ type Columns struct {
 	gap      float64     // gap between columns (points)
 	widths   []float64   // optional explicit column widths (fractions 0–1)
 	elements [][]Element // elements[colIndex] = list of elements in that column
+	rule     ColumnRule  // vertical rule drawn between columns
 }
 
 // columnsLayoutRef carries per-column line data for the renderer.
@@ -45,6 +53,22 @@ func (c *Columns) SetGap(gap float64) *Columns {
 		gap = 0
 	}
 	c.gap = gap
+	return c
+}
+
+// SetColumnRule sets the vertical rule drawn between columns.
+// CSS equivalent: column-rule: 1px solid gray.
+func (c *Columns) SetColumnRule(rule ColumnRule) *Columns {
+	c.rule = rule
+	return c
+}
+
+// SetColumnRuleWidth sets just the rule width (shorthand for a solid black rule).
+func (c *Columns) SetColumnRuleWidth(width float64) *Columns {
+	c.rule.Width = width
+	if c.rule.Style == "" {
+		c.rule.Style = "solid"
+	}
 	return c
 }
 
@@ -218,14 +242,57 @@ func (c *Columns) buildColumnsPlan(colBlocks [][]PlacedBlock, colWidths []float6
 		xOffset += colWidths[i] + c.gap
 	}
 
+	// Capture column rule drawing if configured.
+	var drawFunc func(ctx DrawContext, x, topY float64)
+	if c.rule.Width > 0 && c.cols > 1 {
+		capturedWidths := make([]float64, len(colWidths))
+		copy(capturedWidths, colWidths)
+		capturedGap := c.gap
+		capturedRule := c.rule
+		capturedH := totalH
+
+		drawFunc = func(ctx DrawContext, x, topY float64) {
+			drawColumnRules(ctx, capturedWidths, capturedGap, capturedRule, x, topY, capturedH)
+		}
+	}
+
 	return LayoutPlan{
 		Status:   LayoutFull,
 		Consumed: totalH,
 		Blocks: []PlacedBlock{{
 			X: 0, Y: 0, Width: areaWidth, Height: totalH,
+			Draw:     drawFunc,
 			Children: children,
 		}},
 	}
+}
+
+// drawColumnRules draws vertical rules between columns.
+func drawColumnRules(ctx DrawContext, colWidths []float64, gap float64, rule ColumnRule, absX, topY, height float64) {
+	ctx.Stream.SaveState()
+	ctx.Stream.SetLineWidth(rule.Width)
+	setStrokeColor(ctx.Stream, rule.Color)
+
+	switch rule.Style {
+	case "dashed":
+		ctx.Stream.SetDashPattern([]float64{4, 2}, 0)
+	case "dotted":
+		ctx.Stream.SetDashPattern([]float64{1, 2}, 0)
+	}
+
+	xPos := absX
+	for i := 0; i < len(colWidths)-1; i++ {
+		xPos += colWidths[i]
+		// Draw rule centered in the gap.
+		ruleX := xPos + gap/2
+		bottomY := topY - height
+		ctx.Stream.MoveTo(ruleX, topY)
+		ctx.Stream.LineTo(ruleX, bottomY)
+		ctx.Stream.Stroke()
+		xPos += gap
+	}
+
+	ctx.Stream.RestoreState()
 }
 
 // BalancedColumns creates a multi-column layout that equalizes column heights.

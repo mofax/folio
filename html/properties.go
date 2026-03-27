@@ -11,48 +11,215 @@ import (
 )
 
 // parseColor parses a CSS color value into a layout.Color.
-// Supports: named colors, #RGB, #RRGGBB, rgb(r,g,b).
+// Supports: named colors, #RGB, #RRGGBB, #RGBA, #RRGGBBAA,
+// rgb(r,g,b), rgba(r,g,b,a), hsl(h,s%,l%), hsla(h,s%,l%,a).
+// Alpha is discarded — use parseColorAlpha when alpha is needed.
 func parseColor(value string) (layout.Color, bool) {
+	c, _, ok := parseColorAlpha(value)
+	return c, ok
+}
+
+// parseColorAlpha parses a CSS color and returns the alpha component (0-1).
+// Alpha defaults to 1.0 for formats that don't include it.
+func parseColorAlpha(value string) (layout.Color, float64, bool) {
 	value = strings.TrimSpace(strings.ToLower(value))
 	if value == "" || value == "inherit" || value == "initial" || value == "transparent" {
-		return layout.Color{}, false
+		return layout.Color{}, 0, false
 	}
 
 	// Named color.
 	if c, ok := cssColorNames[value]; ok {
-		return c, true
+		return c, 1, true
 	}
 
-	// Hex color.
+	// Hex color: #RGB, #RGBA, #RRGGBB, #RRGGBBAA.
 	if strings.HasPrefix(value, "#") {
 		hex := value[1:]
 		switch len(hex) {
 		case 3:
-			// #RGB → #RRGGBB
 			hex = string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})
-			return layout.Hex(hex), true
+			return layout.Hex(hex), 1, true
+		case 4:
+			// #RGBA
+			a := hexVal(hex[3])*16 + hexVal(hex[3])
+			hex = string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})
+			return layout.Hex(hex), float64(a) / 255, true
 		case 6:
-			return layout.Hex(hex), true
+			return layout.Hex(hex), 1, true
+		case 8:
+			// #RRGGBBAA
+			a := hexVal(hex[6])*16 + hexVal(hex[7])
+			return layout.Hex(hex[:6]), float64(a) / 255, true
 		}
-		return layout.Color{}, false
+		return layout.Color{}, 0, false
 	}
 
-	// rgb(r, g, b)
-	if strings.HasPrefix(value, "rgb(") && strings.HasSuffix(value, ")") {
-		inner := value[4 : len(value)-1]
-		parts := strings.Split(inner, ",")
-		if len(parts) == 3 {
-			r, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-			g, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-			b, err3 := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
-			if err1 == nil && err2 == nil && err3 == nil {
-				return layout.RGB(r/255, g/255, b/255), true
+	// rgb(r, g, b) / rgba(r, g, b, a)
+	if strings.HasPrefix(value, "rgb") {
+		inner, ok := extractFuncArgs(value, "rgba(")
+		if !ok {
+			inner, ok = extractFuncArgs(value, "rgb(")
+		}
+		if ok {
+			parts := strings.Split(inner, ",")
+			if len(parts) >= 3 {
+				r := parseColorComponent(strings.TrimSpace(parts[0]))
+				g := parseColorComponent(strings.TrimSpace(parts[1]))
+				b := parseColorComponent(strings.TrimSpace(parts[2]))
+				a := 1.0
+				if len(parts) >= 4 {
+					if v, err := strconv.ParseFloat(strings.TrimSpace(parts[3]), 64); err == nil {
+						a = v
+					}
+				}
+				return layout.RGB(r, g, b), a, true
 			}
 		}
-		return layout.Color{}, false
+		return layout.Color{}, 0, false
 	}
 
-	return layout.Color{}, false
+	// hsl(h, s%, l%) / hsla(h, s%, l%, a)
+	if strings.HasPrefix(value, "hsl") {
+		inner, ok := extractFuncArgs(value, "hsla(")
+		if !ok {
+			inner, ok = extractFuncArgs(value, "hsl(")
+		}
+		if ok {
+			parts := strings.Split(inner, ",")
+			if len(parts) >= 3 {
+				h := parseHue(strings.TrimSpace(parts[0]))
+				s := parsePercent(strings.TrimSpace(parts[1]))
+				l := parsePercent(strings.TrimSpace(parts[2]))
+				a := 1.0
+				if len(parts) >= 4 {
+					if v, err := strconv.ParseFloat(strings.TrimSpace(parts[3]), 64); err == nil {
+						a = v
+					}
+				}
+				r, g, b := hslToRGB(h, s, l)
+				return layout.RGB(r, g, b), a, true
+			}
+		}
+		return layout.Color{}, 0, false
+	}
+
+	return layout.Color{}, 0, false
+}
+
+// extractFuncArgs extracts the content inside a CSS function like "rgb(...)" or "rgba(...)".
+func extractFuncArgs(value, prefix string) (string, bool) {
+	if strings.HasPrefix(value, prefix) && strings.HasSuffix(value, ")") {
+		return value[len(prefix) : len(value)-1], true
+	}
+	return "", false
+}
+
+// parseColorComponent parses an RGB color component (0-255 or percentage).
+func parseColorComponent(s string) float64 {
+	if strings.HasSuffix(s, "%") {
+		v, _ := strconv.ParseFloat(s[:len(s)-1], 64)
+		return v / 100
+	}
+	v, _ := strconv.ParseFloat(s, 64)
+	return v / 255
+}
+
+// parseHue parses a CSS hue value (degrees, 0-360).
+func parseHue(s string) float64 {
+	s = strings.TrimSuffix(s, "deg")
+	v, _ := strconv.ParseFloat(s, 64)
+	// Normalize to 0-360.
+	v = v - float64(int(v/360))*360
+	if v < 0 {
+		v += 360
+	}
+	return v / 360 // return as 0-1
+}
+
+// parsePercent parses a percentage value like "50%".
+func parsePercent(s string) float64 {
+	s = strings.TrimSuffix(s, "%")
+	v, _ := strconv.ParseFloat(s, 64)
+	return v / 100
+}
+
+// hexVal returns the numeric value of a hex digit.
+func hexVal(c byte) byte {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0'
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10
+	}
+	return 0
+}
+
+// parseColumnRule parses a CSS column-rule shorthand: "<width> <style> <color>".
+func parseColumnRule(val string, fontSize float64) (float64, string, layout.Color) {
+	parts := strings.Fields(strings.TrimSpace(strings.ToLower(val)))
+	var width float64
+	style := "solid"
+	color := layout.ColorBlack
+	for _, p := range parts {
+		switch p {
+		case "solid", "dashed", "dotted", "double", "none":
+			style = p
+		default:
+			if c, ok := parseColor(p); ok {
+				color = c
+			} else if l := parseLength(p); l != nil {
+				width = l.toPoints(0, fontSize)
+			}
+		}
+	}
+	return width, style, color
+}
+
+// parseLengthPt parses a CSS length value and returns points, or 0 if invalid.
+func parseLengthPt(val string, fontSize float64) float64 {
+	if l := parseLength(val); l != nil {
+		return l.toPoints(0, fontSize)
+	}
+	return 0
+}
+
+// hslToRGB converts HSL values (each 0-1) to RGB values (each 0-1).
+func hslToRGB(h, s, l float64) (r, g, b float64) {
+	if s == 0 {
+		return l, l, l
+	}
+	var q float64
+	if l < 0.5 {
+		q = l * (1 + s)
+	} else {
+		q = l + s - l*s
+	}
+	p := 2*l - q
+	r = hueToRGB(p, q, h+1.0/3)
+	g = hueToRGB(p, q, h)
+	b = hueToRGB(p, q, h-1.0/3)
+	return
+}
+
+func hueToRGB(p, q, t float64) float64 {
+	if t < 0 {
+		t++
+	}
+	if t > 1 {
+		t--
+	}
+	switch {
+	case t < 1.0/6:
+		return p + (q-p)*6*t
+	case t < 1.0/2:
+		return q
+	case t < 2.0/3:
+		return p + (q-p)*(2.0/3-t)*6
+	default:
+		return p
+	}
 }
 
 // parseLength parses a CSS length value like "12px", "1.5em", "50%", "10pt",
