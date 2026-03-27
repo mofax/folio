@@ -62,6 +62,20 @@ func (c *converter) convertFlex(n *html.Node, style computedStyle) []layout.Elem
 		flex.SetWrap(layout.FlexNoWrap)
 	}
 
+	// Map align-content (cross-axis distribution for wrapped lines).
+	switch style.AlignContent {
+	case "flex-end", "end":
+		flex.SetAlignContent(layout.JustifyFlexEnd)
+	case "center":
+		flex.SetAlignContent(layout.JustifyCenter)
+	case "space-between":
+		flex.SetAlignContent(layout.JustifySpaceBetween)
+	case "space-around":
+		flex.SetAlignContent(layout.JustifySpaceAround)
+	case "space-evenly":
+		flex.SetAlignContent(layout.JustifySpaceEvenly)
+	}
+
 	if style.Gap > 0 {
 		flex.SetGap(style.Gap)
 	}
@@ -201,10 +215,10 @@ func (c *converter) convertFlex(n *html.Node, style computedStyle) []layout.Elem
 
 	// Wrap in a Div if the flex container has box-model properties
 	// that the Flex type doesn't support (border-radius, opacity, etc.).
-	hasExtraVisuals := style.BorderRadius > 0 ||
+	hasExtraVisuals := style.BorderRadius > 0 || style.BorderRadiusTL > 0 || style.BorderRadiusTR > 0 || style.BorderRadiusBR > 0 || style.BorderRadiusBL > 0 ||
 		(style.Opacity > 0 && style.Opacity < 1) ||
 		style.Overflow == "hidden" ||
-		style.BoxShadow != nil ||
+		len(style.BoxShadows) > 0 ||
 		style.Width != nil || style.MaxWidth != nil || style.MinWidth != nil ||
 		style.Height != nil || style.MinHeight != nil || style.MaxHeight != nil
 	if hasExtraVisuals {

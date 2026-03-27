@@ -103,6 +103,7 @@ type Flex struct {
 	direction            FlexDirection
 	justify              JustifyContent
 	alignItems           AlignItems
+	alignContent         JustifyContent // cross-axis distribution for wrapped lines
 	wrap                 FlexWrap
 	rowGap               float64
 	columnGap            float64
@@ -140,6 +141,11 @@ func (f *Flex) SetJustifyContent(j JustifyContent) *Flex { f.justify = j; return
 
 // SetAlignItems sets cross-axis alignment for all items.
 func (f *Flex) SetAlignItems(a AlignItems) *Flex { f.alignItems = a; return f }
+
+// SetAlignContent sets cross-axis distribution for multi-line flex containers
+// (flex-wrap: wrap). Controls how wrapped lines are spaced within the container.
+// Has no effect on single-line flex containers.
+func (f *Flex) SetAlignContent(j JustifyContent) *Flex { f.alignContent = j; return f }
 
 // SetWrap enables or disables wrapping.
 func (f *Flex) SetWrap(w FlexWrap) *Flex { f.wrap = w; return f }
@@ -345,6 +351,11 @@ func (f *Flex) planRow(area LayoutArea) LayoutPlan {
 	allFit := true
 	fittedLineCount := 0
 
+	// Track line positions for align-content redistribution.
+	var lineYPositions []float64
+	var lineHeights []float64
+	var lineChildStart []int // index into allChildren where each line's blocks start
+
 	for i, line := range lines {
 		if i > 0 {
 			curY += f.rowGap
@@ -435,6 +446,10 @@ func (f *Flex) planRow(area LayoutArea) LayoutPlan {
 			}
 		}
 
+		lineChildStart = append(lineChildStart, len(allChildren))
+		lineYPositions = append(lineYPositions, curY)
+		lineHeights = append(lineHeights, lineCrossSize)
+
 		for j, item := range line.items {
 			yOffset := f.computeAlignOffset(item, lineCrossSize, itemPlans[j].Consumed)
 			for _, block := range itemPlans[j].Blocks {
@@ -447,6 +462,14 @@ func (f *Flex) planRow(area LayoutArea) LayoutPlan {
 
 		curY += lineCrossSize
 		fittedLineCount++
+	}
+
+	// Apply align-content redistribution for multi-line wrapped containers.
+	if f.alignContent != JustifyFlexStart && len(lineHeights) > 1 && allFit {
+		f.applyAlignContent(allChildren, lineYPositions, lineHeights, lineChildStart, innerHeight)
+		// Recalculate curY based on redistributed positions.
+		lastLine := len(lineHeights) - 1
+		curY = lineYPositions[lastLine] + lineHeights[lastLine]
 	}
 
 	totalH := curY + f.padding.Bottom
@@ -667,6 +690,102 @@ func (f *Flex) computeAlignOffset(item *FlexItem, lineSize, itemSize float64) fl
 	default: // CrossAlignStretch, CrossAlignStart
 		return 0
 	}
+}
+
+// applyAlignContent redistributes wrapped flex lines along the cross-axis
+// based on the align-content property. It shifts PlacedBlock Y-coordinates
+// for all children within each line.
+func (f *Flex) applyAlignContent(children []PlacedBlock, lineY, lineH []float64, lineStart []int, innerHeight float64) {
+	numLines := len(lineH)
+	if numLines <= 1 {
+		return
+	}
+
+	totalLineHeight := 0.0
+	for _, h := range lineH {
+		totalLineHeight += h
+	}
+	freeSpace := innerHeight - totalLineHeight
+	if numLines > 1 {
+		freeSpace -= f.rowGap * float64(numLines-1)
+	}
+	if freeSpace <= 0 {
+		return
+	}
+
+	// Compute new Y-positions for each line.
+	newY := make([]float64, numLines)
+	switch f.alignContent {
+	case JustifyFlexEnd:
+		curY := f.padding.Top + freeSpace
+		for i := range numLines {
+			if i > 0 {
+				curY += f.rowGap
+			}
+			newY[i] = curY
+			curY += lineH[i]
+		}
+	case JustifyCenter:
+		curY := f.padding.Top + freeSpace/2
+		for i := range numLines {
+			if i > 0 {
+				curY += f.rowGap
+			}
+			newY[i] = curY
+			curY += lineH[i]
+		}
+	case JustifySpaceBetween:
+		gap := (innerHeight - totalLineHeight) / float64(numLines-1)
+		curY := f.padding.Top
+		for i := range numLines {
+			if i > 0 {
+				curY += gap
+			}
+			newY[i] = curY
+			curY += lineH[i]
+		}
+	case JustifySpaceAround:
+		gap := (innerHeight - totalLineHeight) / float64(numLines)
+		curY := f.padding.Top + gap/2
+		for i := range numLines {
+			if i > 0 {
+				curY += gap
+			}
+			newY[i] = curY
+			curY += lineH[i]
+		}
+	case JustifySpaceEvenly:
+		gap := (innerHeight - totalLineHeight) / float64(numLines+1)
+		curY := f.padding.Top + gap
+		for i := range numLines {
+			if i > 0 {
+				curY += gap
+			}
+			newY[i] = curY
+			curY += lineH[i]
+		}
+	default:
+		return // JustifyFlexStart — no redistribution needed
+	}
+
+	// Shift all child blocks for each line by the delta.
+	for i := range numLines {
+		delta := newY[i] - lineY[i]
+		if delta == 0 {
+			continue
+		}
+		start := lineStart[i]
+		end := len(children)
+		if i+1 < numLines {
+			end = lineStart[i+1]
+		}
+		for j := start; j < end; j++ {
+			children[j].Y += delta
+		}
+	}
+
+	// Update lineY for the caller to recalculate curY.
+	copy(lineY, newY)
 }
 
 // overflowFrom creates a new Flex containing the items from unfitted lines.

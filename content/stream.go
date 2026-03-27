@@ -463,6 +463,46 @@ func (s *Stream) RoundedRect(x, y, w, h, r float64) {
 	s.ClosePath()
 }
 
+// RoundedRectPerCorner draws a rounded rectangle with different radii per corner.
+// The radii are: rTL (top-left), rTR (top-right), rBR (bottom-right), rBL (bottom-left).
+// In PDF coordinates, y increases upward: (x,y) is bottom-left of the rect.
+func (s *Stream) RoundedRectPerCorner(x, y, w, h, rTL, rTR, rBR, rBL float64) {
+	maxR := min(w, h) / 2
+	rTL = min(rTL, maxR)
+	rTR = min(rTR, maxR)
+	rBR = min(rBR, maxR)
+	rBL = min(rBL, maxR)
+	const k = 0.5522847498
+
+	// Start at bottom-left, just past the BL corner radius.
+	s.MoveTo(x+rBL, y)
+	// Bottom edge → bottom-right corner
+	s.LineTo(x+w-rBR, y)
+	if rBR > 0 {
+		kr := rBR * k
+		s.CurveTo(x+w-rBR+kr, y, x+w, y+rBR-kr, x+w, y+rBR)
+	}
+	// Right edge → top-right corner
+	s.LineTo(x+w, y+h-rTR)
+	if rTR > 0 {
+		kr := rTR * k
+		s.CurveTo(x+w, y+h-rTR+kr, x+w-rTR+kr, y+h, x+w-rTR, y+h)
+	}
+	// Top edge → top-left corner
+	s.LineTo(x+rTL, y+h)
+	if rTL > 0 {
+		kr := rTL * k
+		s.CurveTo(x+rTL-kr, y+h, x, y+h-rTL+kr, x, y+h-rTL)
+	}
+	// Left edge → bottom-left corner
+	s.LineTo(x, y+rBL)
+	if rBL > 0 {
+		kr := rBL * k
+		s.CurveTo(x, y+rBL-kr, x+rBL-kr, y, x+rBL, y)
+	}
+	s.ClosePath()
+}
+
 // --- Output ---
 
 // PrependBytes inserts raw content stream bytes before any existing

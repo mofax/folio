@@ -14,6 +14,19 @@ import (
 
 // baselineShiftFromStyle computes the vertical baseline offset for
 // CSS vertical-align values like "super", "sub", "text-top", "text-bottom".
+// textShadowFromStyle converts a CSS text-shadow to a layout.TextShadow.
+func textShadowFromStyle(style computedStyle) *layout.TextShadow {
+	if style.TextShadow == nil {
+		return nil
+	}
+	return &layout.TextShadow{
+		OffsetX: style.TextShadow.OffsetX,
+		OffsetY: style.TextShadow.OffsetY,
+		Blur:    style.TextShadow.Blur,
+		Color:   style.TextShadow.Color,
+	}
+}
+
 func baselineShiftFromStyle(style computedStyle) float64 {
 	switch style.VerticalAlign {
 	case "super":
@@ -84,8 +97,8 @@ func (c *converter) convertBlock(n *html.Node, style computedStyle) []layout.Ele
 	// If no box-model properties, skip the Div wrapper.
 	hasWidthConstraints := style.Width != nil || style.MaxWidth != nil || style.MinWidth != nil
 	hasHeightConstraints := style.Height != nil || style.MinHeight != nil || style.MaxHeight != nil
-	hasVisualEffects := style.BorderRadius > 0 || (style.Opacity > 0 && style.Opacity < 1) || style.Overflow == "hidden"
-	hasBoxShadow := style.BoxShadow != nil
+	hasVisualEffects := style.BorderRadius > 0 || style.BorderRadiusTL > 0 || style.BorderRadiusTR > 0 || style.BorderRadiusBR > 0 || style.BorderRadiusBL > 0 || (style.Opacity > 0 && style.Opacity < 1) || style.Overflow == "hidden"
+	hasBoxShadow := len(style.BoxShadows) > 0
 	hasOutline := style.OutlineWidth > 0
 	hasTransform := style.Transform != "" && strings.ToLower(strings.TrimSpace(style.Transform)) != "none"
 	hasBgImage := style.BackgroundImage != ""
@@ -208,7 +221,9 @@ func applyDivStyles(div *layout.Div, style computedStyle, containerWidth float64
 	if style.MaxHeight != nil {
 		div.SetMaxHeightUnit(cssLengthToUnitValue(style.MaxHeight, containerWidth, style.FontSize))
 	}
-	if style.BorderRadius > 0 {
+	if style.BorderRadiusTL > 0 || style.BorderRadiusTR > 0 || style.BorderRadiusBR > 0 || style.BorderRadiusBL > 0 {
+		div.SetBorderRadiusPerCorner(style.BorderRadiusTL, style.BorderRadiusTR, style.BorderRadiusBR, style.BorderRadiusBL)
+	} else if style.BorderRadius > 0 {
 		div.SetBorderRadius(style.BorderRadius)
 	}
 	if style.Clear != "" && style.Clear != "none" {
@@ -220,13 +235,13 @@ func applyDivStyles(div *layout.Div, style computedStyle, containerWidth float64
 	if style.Overflow == "hidden" {
 		div.SetOverflow("hidden")
 	}
-	if style.BoxShadow != nil {
-		div.SetBoxShadow(layout.BoxShadow{
-			OffsetX: style.BoxShadow.OffsetX,
-			OffsetY: style.BoxShadow.OffsetY,
-			Blur:    style.BoxShadow.Blur,
-			Spread:  style.BoxShadow.Spread,
-			Color:   style.BoxShadow.Color,
+	for _, bs := range style.BoxShadows {
+		div.AddBoxShadow(layout.BoxShadow{
+			OffsetX: bs.OffsetX,
+			OffsetY: bs.OffsetY,
+			Blur:    bs.Blur,
+			Spread:  bs.Spread,
+			Color:   bs.Color,
 		})
 	}
 	if style.OutlineWidth > 0 {
@@ -258,6 +273,13 @@ func (c *converter) buildColumns(children []layout.Element, style computedStyle)
 	cols := layout.NewColumns(style.ColumnCount)
 	if style.ColumnGap > 0 {
 		cols.SetGap(style.ColumnGap)
+	}
+	if style.ColumnRuleWidth > 0 {
+		cols.SetColumnRule(layout.ColumnRule{
+			Width: style.ColumnRuleWidth,
+			Color: style.ColumnRuleColor,
+			Style: style.ColumnRuleStyle,
+		})
 	}
 
 	// Distribute children round-robin across columns.

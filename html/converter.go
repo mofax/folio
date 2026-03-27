@@ -167,7 +167,7 @@ func ConvertFull(htmlStr string, opts *Options) (*ConvertResult, error) {
 	style := defaultStyle()
 	style.FontSize = o.DefaultFontSize
 
-	ss := parseStyleBlocks(doc, o.BasePath)
+	ss := parseStyleBlocks(doc, o.BasePath, makeCSSFetcher(o.URLPolicy))
 
 	c := &converter{opts: o, rootFontSize: o.DefaultFontSize, sheet: ss, embeddedFonts: make(map[string]*font.EmbeddedFont), containerWidth: o.PageWidth, counters: make(map[string][]int), urlPolicy: o.URLPolicy}
 
@@ -227,7 +227,7 @@ func Convert(htmlStr string, opts *Options) ([]layout.Element, error) {
 	style := defaultStyle()
 	style.FontSize = o.DefaultFontSize
 
-	ss := parseStyleBlocks(doc, o.BasePath)
+	ss := parseStyleBlocks(doc, o.BasePath, makeCSSFetcher(o.URLPolicy))
 
 	c := &converter{opts: o, rootFontSize: o.DefaultFontSize, sheet: ss, embeddedFonts: make(map[string]*font.EmbeddedFont), containerWidth: o.PageWidth, counters: make(map[string][]int), urlPolicy: o.URLPolicy}
 

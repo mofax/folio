@@ -62,10 +62,10 @@ type Div struct {
 	heightUnit    *UnitValue // lazy-resolved explicit height (forces exact height)
 	hCenter       bool       // true = horizontally center within parent (margin: auto)
 	hRight        bool       // true = right-align within parent (margin-left: auto)
-	borderRadius  float64    // corner radius (points, 0 = sharp corners)
+	borderRadius  [4]float64 // corner radii [TL, TR, BR, BL] (points, 0 = sharp)
 	opacity       float64    // 0..1 (0 = default/opaque, meaning "not set")
 	overflow      string     // "visible" (default), "hidden"
-	boxShadow     *BoxShadow
+	boxShadows    []BoxShadow
 	outlineWidth  float64
 	outlineStyle  string
 	outlineColor  Color
@@ -298,10 +298,22 @@ func (d *Div) SetRelativeOffset(dx, dy float64) *Div {
 	return d
 }
 
-// SetBorderRadius sets the corner radius for rounded corners (in points).
+// SetBorderRadius sets a uniform corner radius for all four corners (in points).
 func (d *Div) SetBorderRadius(r float64) *Div {
-	d.borderRadius = r
+	d.borderRadius = [4]float64{r, r, r, r}
 	return d
+}
+
+// SetBorderRadiusPerCorner sets per-corner radii: top-left, top-right,
+// bottom-right, bottom-left (matching CSS border-radius order).
+func (d *Div) SetBorderRadiusPerCorner(tl, tr, br, bl float64) *Div {
+	d.borderRadius = [4]float64{tl, tr, br, bl}
+	return d
+}
+
+// hasRadius returns true if any corner has a non-zero radius.
+func (d *Div) hasRadius() bool {
+	return d.borderRadius[0] > 0 || d.borderRadius[1] > 0 || d.borderRadius[2] > 0 || d.borderRadius[3] > 0
 }
 
 // SetOpacity sets the opacity for the entire Div (0 = transparent, 1 = opaque).
@@ -333,9 +345,18 @@ func (d *Div) resolveTag() string {
 	return "Div"
 }
 
-// SetBoxShadow sets a box-shadow effect on the Div.
+// SetBoxShadow sets a single box-shadow effect on the Div, replacing any
+// previously set shadows. For multiple shadows, use AddBoxShadow.
 func (d *Div) SetBoxShadow(shadow BoxShadow) *Div {
-	d.boxShadow = &shadow
+	d.boxShadows = []BoxShadow{shadow}
+	return d
+}
+
+// AddBoxShadow appends a box-shadow effect. Multiple shadows are drawn
+// in reverse order (last added is drawn first, appearing behind earlier ones),
+// matching CSS stacking behavior.
+func (d *Div) AddBoxShadow(shadow BoxShadow) *Div {
+	d.boxShadows = append(d.boxShadows, shadow)
 	return d
 }
 
@@ -593,6 +614,7 @@ func (d *Div) PlanLayout(area LayoutArea) LayoutPlan {
 		Draw: func(ctx DrawContext, absX, absTopY float64) {
 			bottomY := absTopY - capturedTotalH
 			r := capturedDiv.borderRadius
+			hasR := capturedDiv.hasRadius()
 
 			// Apply CSS transform if set.
 			if len(capturedDiv.transforms) > 0 {
@@ -617,16 +639,16 @@ func (d *Div) PlanLayout(area LayoutArea) LayoutPlan {
 				ctx.Stream.SetExtGState(gsName)
 			}
 
-			// Draw box-shadow before background/content.
-			if capturedDiv.boxShadow != nil {
-				drawBoxShadow(ctx, capturedDiv.boxShadow, absX, bottomY, capturedOuterW, capturedTotalH)
+			// Draw box-shadows before background/content (reverse order = CSS stacking).
+			for i := len(capturedDiv.boxShadows) - 1; i >= 0; i-- {
+				drawBoxShadow(ctx, &capturedDiv.boxShadows[i], absX, bottomY, capturedOuterW, capturedTotalH)
 			}
 
 			// overflow:hidden — set clipping path.
 			if capturedDiv.overflow == "hidden" {
 				ctx.Stream.SaveState()
-				if r > 0 {
-					ctx.Stream.RoundedRect(absX, bottomY, capturedOuterW, capturedTotalH, r)
+				if hasR {
+					ctx.Stream.RoundedRectPerCorner(absX, bottomY, capturedOuterW, capturedTotalH, r[0], r[1], r[2], r[3])
 				} else {
 					ctx.Stream.Rectangle(absX, bottomY, capturedOuterW, capturedTotalH)
 				}
@@ -637,8 +659,8 @@ func (d *Div) PlanLayout(area LayoutArea) LayoutPlan {
 			if capturedDiv.background != nil {
 				ctx.Stream.SaveState()
 				setFillColor(ctx.Stream, *capturedDiv.background)
-				if r > 0 {
-					ctx.Stream.RoundedRect(absX, bottomY, capturedOuterW, capturedTotalH, r)
+				if hasR {
+					ctx.Stream.RoundedRectPerCorner(absX, bottomY, capturedOuterW, capturedTotalH, r[0], r[1], r[2], r[3])
 				} else {
 					ctx.Stream.Rectangle(absX, bottomY, capturedOuterW, capturedTotalH)
 				}
@@ -648,11 +670,11 @@ func (d *Div) PlanLayout(area LayoutArea) LayoutPlan {
 
 			// Draw background image after background color, before borders.
 			if capturedDiv.bgImage != nil && capturedDiv.bgImage.Image != nil {
-				drawBackgroundImage(ctx, capturedDiv.bgImage, absX, bottomY, capturedOuterW, capturedTotalH, r)
+				drawBackgroundImage(ctx, capturedDiv.bgImage, absX, bottomY, capturedOuterW, capturedTotalH, r[0])
 			}
 
-			if r > 0 {
-				drawRoundedBorders(ctx.Stream, capturedDiv.borders, absX, bottomY, capturedOuterW, capturedTotalH, r)
+			if hasR {
+				drawRoundedBorders(ctx.Stream, capturedDiv.borders, absX, bottomY, capturedOuterW, capturedTotalH, r[0])
 			} else {
 				drawCellBorders(ctx.Stream, capturedDiv.borders, absX, bottomY, capturedOuterW, capturedTotalH)
 			}

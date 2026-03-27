@@ -77,7 +77,9 @@ type cssDecl struct {
 // parseStyleBlocks finds all <link rel="stylesheet"> and <style> elements in the
 // document and parses their CSS. Linked stylesheets are processed before <style>
 // blocks so that inline styles override external ones by source order.
-func parseStyleBlocks(doc *html.Node, basePath string) *styleSheet {
+// fetchURL, if non-nil, is called for HTTP/HTTPS hrefs; it should return the
+// CSS bytes or an error. Local file paths are resolved against basePath.
+func parseStyleBlocks(doc *html.Node, basePath string, fetchURL func(string) ([]byte, error)) *styleSheet {
 	ss := &styleSheet{}
 
 	// First pass: collect <link rel="stylesheet"> elements and load them.
@@ -95,15 +97,21 @@ func parseStyleBlocks(doc *html.Node, basePath string) *styleSheet {
 				}
 			}
 			if rel == "stylesheet" && href != "" {
-				path := href
-				if !filepath.IsAbs(path) && basePath != "" {
-					path = filepath.Join(basePath, path)
+				var data []byte
+				var err error
+				if isURL(href) && fetchURL != nil {
+					data, err = fetchURL(href)
+				} else {
+					path := href
+					if !filepath.IsAbs(path) && basePath != "" {
+						path = filepath.Join(basePath, path)
+					}
+					data, err = os.ReadFile(path)
 				}
-				data, err := os.ReadFile(path)
 				if err == nil {
 					ss.parseCSS(string(data))
 				}
-				// Silently skip if file can't be read.
+				// Silently skip if stylesheet can't be loaded.
 			}
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
@@ -873,21 +881,26 @@ func pseudoMatches(pseudo string, n *html.Node) bool {
 	case strings.HasPrefix(pseudo, "nth-child(") && strings.HasSuffix(pseudo, ")"):
 		inner := pseudo[len("nth-child(") : len(pseudo)-1]
 		inner = strings.TrimSpace(inner)
-		if inner == "odd" {
-			pos := childIndex(n)
-			return pos > 0 && pos%2 == 1
-		}
-		if inner == "even" {
-			pos := childIndex(n)
-			return pos > 0 && pos%2 == 0
-		}
-		if num, err := strconv.Atoi(inner); err == nil {
-			return isNthChild(n, num)
-		}
-		return false
+		return matchesNth(childIndex(n), inner)
 	case pseudo == "root":
 		// :root matches the document element (<html>).
 		return n.Parent != nil && n.Parent.Type == html.DocumentNode
+	case pseudo == "first-of-type":
+		return typeIndex(n) == 1
+	case pseudo == "last-of-type":
+		return isLastOfType(n)
+	case strings.HasPrefix(pseudo, "nth-of-type(") && strings.HasSuffix(pseudo, ")"):
+		inner := pseudo[len("nth-of-type(") : len(pseudo)-1]
+		inner = strings.TrimSpace(inner)
+		return matchesNth(typeIndex(n), inner)
+	case strings.HasPrefix(pseudo, "nth-last-child(") && strings.HasSuffix(pseudo, ")"):
+		inner := pseudo[len("nth-last-child(") : len(pseudo)-1]
+		inner = strings.TrimSpace(inner)
+		return matchesNth(lastChildIndex(n), inner)
+	case strings.HasPrefix(pseudo, "nth-last-of-type(") && strings.HasSuffix(pseudo, ")"):
+		inner := pseudo[len("nth-last-of-type(") : len(pseudo)-1]
+		inner = strings.TrimSpace(inner)
+		return matchesNth(lastTypeIndex(n), inner)
 	case strings.HasPrefix(pseudo, "not(") && strings.HasSuffix(pseudo, ")"):
 		inner := pseudo[len("not(") : len(pseudo)-1]
 		inner = strings.TrimSpace(inner)
@@ -934,6 +947,128 @@ func isLastChild(n *html.Node) bool {
 		}
 	}
 	return true
+}
+
+// typeIndex returns the 1-based index of n among siblings with the same tag name.
+func typeIndex(n *html.Node) int {
+	if n.Parent == nil || n.Type != html.ElementNode {
+		return 0
+	}
+	idx := 0
+	for sib := n.Parent.FirstChild; sib != nil; sib = sib.NextSibling {
+		if sib.Type == html.ElementNode && sib.Data == n.Data {
+			idx++
+			if sib == n {
+				return idx
+			}
+		}
+	}
+	return 0
+}
+
+// isLastOfType checks if n is the last sibling with the same tag name.
+func isLastOfType(n *html.Node) bool {
+	if n.Parent == nil || n.Type != html.ElementNode {
+		return false
+	}
+	for sib := n.NextSibling; sib != nil; sib = sib.NextSibling {
+		if sib.Type == html.ElementNode && sib.Data == n.Data {
+			return false
+		}
+	}
+	return true
+}
+
+// lastChildIndex returns the 1-based index of n counting from the last element child.
+func lastChildIndex(n *html.Node) int {
+	if n.Parent == nil {
+		return 0
+	}
+	idx := 0
+	for sib := n.Parent.LastChild; sib != nil; sib = sib.PrevSibling {
+		if sib.Type == html.ElementNode {
+			idx++
+			if sib == n {
+				return idx
+			}
+		}
+	}
+	return 0
+}
+
+// lastTypeIndex returns the 1-based index of n counting from the last sibling of the same type.
+func lastTypeIndex(n *html.Node) int {
+	if n.Parent == nil || n.Type != html.ElementNode {
+		return 0
+	}
+	idx := 0
+	for sib := n.Parent.LastChild; sib != nil; sib = sib.PrevSibling {
+		if sib.Type == html.ElementNode && sib.Data == n.Data {
+			idx++
+			if sib == n {
+				return idx
+			}
+		}
+	}
+	return 0
+}
+
+// matchesNth checks if a 1-based position matches an :nth-*() expression.
+// Supports: "odd", "even", integer, "An+B" (e.g. "2n+1", "3n", "-n+3").
+func matchesNth(pos int, expr string) bool {
+	if pos <= 0 {
+		return false
+	}
+	switch expr {
+	case "odd":
+		return pos%2 == 1
+	case "even":
+		return pos%2 == 0
+	}
+	// Try simple integer.
+	if num, err := strconv.Atoi(expr); err == nil {
+		return pos == num
+	}
+	// Parse An+B form.
+	a, b := parseAnPlusB(expr)
+	if a == 0 {
+		return pos == b
+	}
+	// pos = a*n + b → n = (pos - b) / a, n >= 0 (or >= 1 if a > 0)
+	diff := pos - b
+	if diff%a != 0 {
+		return false
+	}
+	n := diff / a
+	return n >= 0
+}
+
+// parseAnPlusB parses "An+B" expressions like "2n+1", "3n", "-n+3", "n".
+func parseAnPlusB(s string) (a, b int) {
+	s = strings.ReplaceAll(s, " ", "")
+	nIdx := strings.Index(s, "n")
+	if nIdx < 0 {
+		// No "n" — treat as pure B.
+		b, _ = strconv.Atoi(s)
+		return 0, b
+	}
+	// Parse A (before "n").
+	aStr := s[:nIdx]
+	switch aStr {
+	case "", "+":
+		a = 1
+	case "-":
+		a = -1
+	default:
+		a, _ = strconv.Atoi(aStr)
+	}
+	// Parse B (after "n").
+	rest := s[nIdx+1:]
+	if rest == "" {
+		return a, 0
+	}
+	b, _ = strconv.Atoi(rest)
+	return a, b
 }
 
 // nodeAttr returns the value of an attribute on a node.

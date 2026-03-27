@@ -242,3 +242,69 @@ func abs(x float64) float64 {
 	}
 	return x
 }
+
+func TestColumnRulePlanLayout(t *testing.T) {
+	cols := NewColumns(3).SetGap(20).SetColumnRule(ColumnRule{
+		Width: 1, Color: ColorGray, Style: "solid",
+	})
+	cols.Add(0, NewParagraph("Col 1", font.Helvetica, 12))
+	cols.Add(1, NewParagraph("Col 2", font.Helvetica, 12))
+	cols.Add(2, NewParagraph("Col 3", font.Helvetica, 12))
+
+	plan := cols.PlanLayout(LayoutArea{Width: 600, Height: 400})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	// The parent block should have a Draw func for column rules.
+	if plan.Blocks[0].Draw == nil {
+		t.Error("expected Draw func for column rules")
+	}
+}
+
+func TestColumnRuleNoneWhenZeroWidth(t *testing.T) {
+	cols := NewColumns(2).SetGap(10)
+	cols.Add(0, NewParagraph("A", font.Helvetica, 12))
+	cols.Add(1, NewParagraph("B", font.Helvetica, 12))
+
+	plan := cols.PlanLayout(LayoutArea{Width: 400, Height: 400})
+	if plan.Blocks[0].Draw != nil {
+		t.Error("expected no Draw func when no column rule")
+	}
+}
+
+func TestColumnRuleWidthShorthand(t *testing.T) {
+	cols := NewColumns(2).SetColumnRuleWidth(2)
+	if cols.rule.Width != 2 {
+		t.Errorf("expected rule width 2, got %f", cols.rule.Width)
+	}
+	if cols.rule.Style != "solid" {
+		t.Errorf("expected solid style, got %q", cols.rule.Style)
+	}
+}
+
+func TestColumnRuleDashedStyle(t *testing.T) {
+	cols := NewColumns(2).SetGap(20).SetColumnRule(ColumnRule{
+		Width: 1, Color: ColorBlack, Style: "dashed",
+	})
+	cols.Add(0, NewParagraph("A", font.Helvetica, 12))
+	cols.Add(1, NewParagraph("B", font.Helvetica, 12))
+
+	plan := cols.PlanLayout(LayoutArea{Width: 400, Height: 400})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	if plan.Blocks[0].Draw == nil {
+		t.Error("expected Draw func for dashed column rule")
+	}
+}
+
+func TestColumnRuleSingleColumn(t *testing.T) {
+	// Column rule should not be drawn for single-column layout.
+	cols := NewColumns(1).SetColumnRule(ColumnRule{Width: 1})
+	cols.Add(0, NewParagraph("A", font.Helvetica, 12))
+
+	plan := cols.PlanLayout(LayoutArea{Width: 400, Height: 400})
+	if plan.Blocks[0].Draw != nil {
+		t.Error("expected no Draw func for single-column layout")
+	}
+}

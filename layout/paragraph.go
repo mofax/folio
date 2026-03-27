@@ -212,6 +212,7 @@ func (p *Paragraph) Layout(maxWidth float64) []Line {
 				WordSpacing:     run.WordSpacing,
 				BaselineShift:   run.BaselineShift,
 				LinkURI:         run.LinkURI,
+				TextShadow:      run.TextShadow,
 			})
 			nextLineBreak = false
 		}
@@ -854,6 +855,7 @@ func (p *Paragraph) measureWords(maxWidth float64) ([]Word, float64) {
 				WordSpacing:     run.WordSpacing,
 				BaselineShift:   run.BaselineShift,
 				LinkURI:         run.LinkURI,
+				TextShadow:      run.TextShadow,
 				LineBreak:       nextLineBreak,
 			})
 			nextLineBreak = false

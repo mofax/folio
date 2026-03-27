@@ -464,3 +464,191 @@ func TestFlexColumnAlignCenter(t *testing.T) {
 		t.Errorf("expected X > 0 for CrossAlignCenter, got %f", child.X)
 	}
 }
+
+func TestFlexAlignContentCenter(t *testing.T) {
+	// 3 wrapped lines in a tall container.
+	// With align-content:center, lines should be centered vertically.
+	f := NewFlex().
+		SetWrap(FlexWrapOn).
+		SetAlignContent(JustifyCenter)
+
+	for range 6 {
+		f.AddItem(NewFlexItem(flexParagraph("Item")).SetBasis(100))
+	}
+
+	plan := f.PlanLayout(LayoutArea{Width: 250, Height: 800})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	children := plan.Blocks[0].Children
+	if len(children) < 2 {
+		t.Fatal("expected multiple children")
+	}
+	// First child should be shifted down from the top (centered).
+	if children[0].Y < 1 {
+		t.Errorf("expected first child Y > 0 (centered), got %f", children[0].Y)
+	}
+}
+
+func TestFlexAlignContentSpaceBetween(t *testing.T) {
+	f := NewFlex().
+		SetWrap(FlexWrapOn).
+		SetAlignContent(JustifySpaceBetween)
+
+	for range 4 {
+		f.AddItem(NewFlexItem(flexParagraph("Item")).SetBasis(100))
+	}
+
+	plan := f.PlanLayout(LayoutArea{Width: 250, Height: 800})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	children := plan.Blocks[0].Children
+	// With space-between, first line at top, last line at bottom.
+	// First child Y should be near 0 (top), last child Y > first.
+	firstY := children[0].Y
+	lastY := children[len(children)-1].Y
+	if lastY <= firstY {
+		t.Errorf("expected last child Y > first child Y for space-between")
+	}
+}
+
+func TestFlexAlignContentFlexEnd(t *testing.T) {
+	f := NewFlex().
+		SetWrap(FlexWrapOn).
+		SetAlignContent(JustifyFlexEnd)
+
+	for range 4 {
+		f.AddItem(NewFlexItem(flexParagraph("Item")).SetBasis(100))
+	}
+
+	plan := f.PlanLayout(LayoutArea{Width: 250, Height: 800})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	children := plan.Blocks[0].Children
+	// With flex-end, first item should be pushed down from top.
+	if children[0].Y < 1 {
+		t.Errorf("expected first child Y > 0 (flex-end), got %f", children[0].Y)
+	}
+}
+
+func TestFlexAlignContentSpaceAround(t *testing.T) {
+	f := NewFlex().
+		SetWrap(FlexWrapOn).
+		SetAlignContent(JustifySpaceAround)
+
+	for range 4 {
+		f.AddItem(NewFlexItem(flexParagraph("Item")).SetBasis(100))
+	}
+
+	plan := f.PlanLayout(LayoutArea{Width: 250, Height: 800})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	children := plan.Blocks[0].Children
+	// First child should be pushed down (half-gap before first line).
+	if children[0].Y < 1 {
+		t.Errorf("expected first child Y > 0 for space-around, got %f", children[0].Y)
+	}
+}
+
+func TestFlexAlignContentSpaceEvenly(t *testing.T) {
+	f := NewFlex().
+		SetWrap(FlexWrapOn).
+		SetAlignContent(JustifySpaceEvenly)
+
+	for range 4 {
+		f.AddItem(NewFlexItem(flexParagraph("Item")).SetBasis(100))
+	}
+
+	plan := f.PlanLayout(LayoutArea{Width: 250, Height: 800})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	children := plan.Blocks[0].Children
+	// First child should be pushed down (equal gap before first line).
+	if children[0].Y < 1 {
+		t.Errorf("expected first child Y > 0 for space-evenly, got %f", children[0].Y)
+	}
+}
+
+func TestFlexAlignContentNoWrapIgnored(t *testing.T) {
+	// align-content should have no effect without wrapping (single line).
+	f := NewFlex().
+		SetAlignContent(JustifyCenter).
+		Add(flexParagraph("A")).
+		Add(flexParagraph("B"))
+
+	plan := f.PlanLayout(LayoutArea{Width: 400, Height: 800})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	children := plan.Blocks[0].Children
+	// Without wrapping there's only 1 line, so align-content is a no-op.
+	// First child Y should be at or near 0 (no redistribution).
+	if children[0].Y > 1 {
+		t.Errorf("expected first child Y near 0 (single line, no effect), got %f", children[0].Y)
+	}
+}
+
+func TestFlexAlignContentSingleWrappedLine(t *testing.T) {
+	// Two items that fit on one line even with wrapping enabled.
+	// align-content should be no-op for a single line.
+	f := NewFlex().
+		SetWrap(FlexWrapOn).
+		SetAlignContent(JustifyCenter).
+		AddItem(NewFlexItem(flexParagraph("A")).SetBasis(50)).
+		AddItem(NewFlexItem(flexParagraph("B")).SetBasis(50))
+
+	plan := f.PlanLayout(LayoutArea{Width: 400, Height: 800})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	children := plan.Blocks[0].Children
+	if children[0].Y > 1 {
+		t.Errorf("single wrapped line: Y should be near 0, got %f", children[0].Y)
+	}
+}
+
+func TestFlexAlignContentWithRowGap(t *testing.T) {
+	// align-content with row-gap should account for gaps in free space calculation.
+	f := NewFlex().
+		SetWrap(FlexWrapOn).
+		SetRowGap(10).
+		SetAlignContent(JustifyCenter)
+
+	for range 6 {
+		f.AddItem(NewFlexItem(flexParagraph("Item")).SetBasis(100))
+	}
+
+	plan := f.PlanLayout(LayoutArea{Width: 250, Height: 800})
+	if plan.Status != LayoutFull {
+		t.Fatal("expected LayoutFull")
+	}
+	if plan.Consumed <= 0 {
+		t.Error("consumed should be positive")
+	}
+}
+
+func TestFlexAlignContentTightContainer(t *testing.T) {
+	// When container is just tall enough for the content, no redistribution happens.
+	f := NewFlex().
+		SetWrap(FlexWrapOn).
+		SetAlignContent(JustifySpaceBetween)
+
+	for range 4 {
+		f.AddItem(NewFlexItem(flexParagraph("Item")).SetBasis(100))
+	}
+
+	// Use just enough height — lines fill the space, no free space to distribute.
+	plan := f.PlanLayout(LayoutArea{Width: 250, Height: 40})
+	if plan.Status == LayoutFull {
+		children := plan.Blocks[0].Children
+		// First child should be near top (no space to distribute).
+		if children[0].Y > 1 {
+			t.Errorf("tight container: first child Y should be near 0, got %f", children[0].Y)
+		}
+	}
+	// Partial layout is also acceptable for a very tight container.
+}

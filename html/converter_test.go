@@ -267,7 +267,14 @@ func TestParseColor(t *testing.T) {
 		{"red", true},
 		{"#ff0000", true},
 		{"#f00", true},
+		{"#f00a", true},     // #RGBA
+		{"#ff000080", true}, // #RRGGBBAA
 		{"rgb(255, 0, 0)", true},
+		{"rgba(255, 0, 0, 0.5)", true},
+		{"rgba(100%, 0%, 0%, 1)", true},
+		{"hsl(0, 100%, 50%)", true},
+		{"hsla(120, 100%, 50%, 0.3)", true},
+		{"hsl(240, 100%, 50%)", true},
 		{"transparent", false},
 		{"", false},
 		{"notacolor", false},
@@ -276,6 +283,140 @@ func TestParseColor(t *testing.T) {
 		_, ok := parseColor(tt.input)
 		if ok != tt.ok {
 			t.Errorf("parseColor(%q): got ok=%v, want %v", tt.input, ok, tt.ok)
+		}
+	}
+}
+
+func TestParseColorAlphaValues(t *testing.T) {
+	tests := []struct {
+		input string
+		alpha float64
+	}{
+		{"red", 1.0},
+		{"#ff0000", 1.0},
+		{"#ff000080", 128.0 / 255},
+		{"rgba(255, 0, 0, 0.5)", 0.5},
+		{"rgba(255, 0, 0, 0)", 0},
+		{"rgba(255, 0, 0, 1)", 1.0},
+		{"hsla(0, 100%, 50%, 0.3)", 0.3},
+	}
+	for _, tt := range tests {
+		_, alpha, ok := parseColorAlpha(tt.input)
+		if !ok {
+			t.Errorf("parseColorAlpha(%q): expected ok=true", tt.input)
+			continue
+		}
+		if diff := alpha - tt.alpha; diff > 0.01 || diff < -0.01 {
+			t.Errorf("parseColorAlpha(%q): alpha=%f, want %f", tt.input, alpha, tt.alpha)
+		}
+	}
+}
+
+func TestHSLColors(t *testing.T) {
+	tests := []struct {
+		input   string
+		r, g, b float64 // expected RGB 0-1
+	}{
+		{"hsl(0, 100%, 50%)", 1, 0, 0},     // red
+		{"hsl(120, 100%, 50%)", 0, 1, 0},   // green
+		{"hsl(240, 100%, 50%)", 0, 0, 1},   // blue
+		{"hsl(0, 0%, 50%)", 0.5, 0.5, 0.5}, // gray
+		{"hsl(0, 0%, 0%)", 0, 0, 0},        // black
+		{"hsl(0, 0%, 100%)", 1, 1, 1},      // white
+	}
+	for _, tt := range tests {
+		c, ok := parseColor(tt.input)
+		if !ok {
+			t.Errorf("parseColor(%q): expected ok=true", tt.input)
+			continue
+		}
+		if diff := c.R - tt.r; diff > 0.02 || diff < -0.02 {
+			t.Errorf("parseColor(%q): R=%f, want %f", tt.input, c.R, tt.r)
+		}
+		if diff := c.G - tt.g; diff > 0.02 || diff < -0.02 {
+			t.Errorf("parseColor(%q): G=%f, want %f", tt.input, c.G, tt.g)
+		}
+		if diff := c.B - tt.b; diff > 0.02 || diff < -0.02 {
+			t.Errorf("parseColor(%q): B=%f, want %f", tt.input, c.B, tt.b)
+		}
+	}
+}
+
+func TestParseBoxShadowSingle(t *testing.T) {
+	shadows := parseBoxShadows("2px 4px 6px rgba(0, 0, 0, 0.3)", 12)
+	if len(shadows) != 1 {
+		t.Fatalf("expected 1 shadow, got %d", len(shadows))
+	}
+	if shadows[0].OffsetX == 0 && shadows[0].OffsetY == 0 {
+		t.Error("expected non-zero offsets")
+	}
+}
+
+func TestParseBoxShadowMultiple(t *testing.T) {
+	// Two shadows separated by comma — commas inside rgba() must not split.
+	shadows := parseBoxShadows("2px 2px 4px rgba(0, 0, 0, 0.5), 0 0 10px rgba(255, 0, 0, 0.3)", 12)
+	if len(shadows) != 2 {
+		t.Fatalf("expected 2 shadows, got %d", len(shadows))
+	}
+}
+
+func TestParseBoxShadowThree(t *testing.T) {
+	shadows := parseBoxShadows("1px 1px 2px black, 0 0 5px red, -1px -1px 3px blue", 12)
+	if len(shadows) != 3 {
+		t.Fatalf("expected 3 shadows, got %d", len(shadows))
+	}
+}
+
+func TestParseBoxShadowNone(t *testing.T) {
+	shadows := parseBoxShadows("none", 12)
+	if len(shadows) != 0 {
+		t.Errorf("expected 0 shadows for 'none', got %d", len(shadows))
+	}
+}
+
+func TestParseBoxShadowInset(t *testing.T) {
+	shadows := parseBoxShadows("inset 0 2px 4px rgba(0,0,0,0.2)", 12)
+	if len(shadows) != 1 {
+		t.Fatalf("expected 1 shadow, got %d", len(shadows))
+	}
+	if !shadows[0].Inset {
+		t.Error("expected inset shadow")
+	}
+}
+
+func TestBoxShadowHTMLMultiple(t *testing.T) {
+	src := `<div style="box-shadow: 2px 2px 4px rgba(0,0,0,0.5), 0 0 10px red; padding: 10px;">
+		<p>Shadowed content</p>
+	</div>`
+	elems, err := Convert(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) < 1 {
+		t.Fatal("expected at least 1 element")
+	}
+	// Verify it produces a valid layout.
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 400, Height: 800})
+	if plan.Status != layout.LayoutFull {
+		t.Error("expected LayoutFull")
+	}
+}
+
+func TestSplitTopLevelCommas(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"a, b, c", 3},
+		{"rgba(0,0,0,0.5) 2px, red 1px", 2},
+		{"no commas here", 1},
+		{"rgba(1,2,3), rgba(4,5,6)", 2},
+		{"a(b,c), d(e,f), g", 3},
+	}
+	for _, tt := range tests {
+		parts := splitTopLevelCommas(tt.input)
+		if len(parts) != tt.want {
+			t.Errorf("splitTopLevelCommas(%q): got %d parts, want %d", tt.input, len(parts), tt.want)
 		}
 	}
 }
@@ -1321,6 +1462,110 @@ p:nth-child(even) { color: blue; }
 </style>
 <div><p>One</p><p>Two</p><p>Three</p></div>`
 	elems, err := Convert(html, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) < 1 {
+		t.Fatal("expected at least 1 element")
+	}
+}
+
+func TestCSSColumnRule(t *testing.T) {
+	src := `<div style="column-count: 3; column-gap: 20px; column-rule: 1px solid gray;">
+		<p>First column content.</p>
+		<p>Second column content.</p>
+		<p>Third column content.</p>
+	</div>`
+	elems, err := Convert(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) < 1 {
+		t.Fatal("expected at least 1 element")
+	}
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 600, Height: 800})
+	if plan.Status != layout.LayoutFull {
+		t.Error("expected LayoutFull")
+	}
+}
+
+func TestParseColumnRuleShorthand(t *testing.T) {
+	tests := []struct {
+		input string
+		width float64 // in points (1px = 0.75pt)
+		style string
+	}{
+		{"1px solid gray", 0.75, "solid"},
+		{"2px dashed red", 1.5, "dashed"},
+		{"dotted", 0, "dotted"},
+		{"3px", 2.25, "solid"},
+		{"none", 0, "none"},
+	}
+	for _, tt := range tests {
+		w, s, _ := parseColumnRule(tt.input, 12)
+		if abs(w-tt.width) > 0.01 {
+			t.Errorf("parseColumnRule(%q): width=%f, want %f", tt.input, w, tt.width)
+		}
+		if s != tt.style {
+			t.Errorf("parseColumnRule(%q): style=%q, want %q", tt.input, s, tt.style)
+		}
+	}
+}
+
+func abs(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func TestCSSNthOfType(t *testing.T) {
+	src := `<style>
+tr:nth-of-type(even) { background-color: #f9f9f9; }
+tr:nth-of-type(odd) { background-color: #fff; }
+</style>
+<table>
+<tr><td>Row 1</td></tr>
+<tr><td>Row 2</td></tr>
+<tr><td>Row 3</td></tr>
+<tr><td>Row 4</td></tr>
+</table>`
+	elems, err := Convert(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) < 1 {
+		t.Fatal("expected at least 1 element")
+	}
+}
+
+func TestCSSFirstLastOfType(t *testing.T) {
+	src := `<style>
+p:first-of-type { font-weight: bold; }
+p:last-of-type { font-style: italic; }
+</style>
+<div>
+<h2>Title</h2>
+<p>First paragraph</p>
+<p>Second paragraph</p>
+<p>Last paragraph</p>
+</div>`
+	elems, err := Convert(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) < 1 {
+		t.Fatal("expected at least 1 element")
+	}
+}
+
+func TestCSSNthAnPlusB(t *testing.T) {
+	// Test An+B expressions: 3n+1 matches positions 1, 4, 7, ...
+	src := `<style>
+li:nth-of-type(3n+1) { color: red; }
+</style>
+<ul><li>1</li><li>2</li><li>3</li><li>4</li><li>5</li><li>6</li></ul>`
+	elems, err := Convert(src, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
