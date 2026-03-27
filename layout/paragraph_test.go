@@ -537,9 +537,9 @@ func TestStyledParagraphAcceptsInlineRun(t *testing.T) {
 	el := &fixedElement{width: 20, height: 20}
 	// Should not panic.
 	p := NewStyledParagraph(
-		Run("Hello ", font.Helvetica, 12),
+		NewRun("Hello ", font.Helvetica, 12),
 		RunInline(el),
-		Run(" World", font.Helvetica, 12),
+		NewRun(" World", font.Helvetica, 12),
 	)
 	if p == nil {
 		t.Fatal("expected non-nil paragraph")
@@ -551,7 +551,7 @@ func TestAddRunAcceptsInlineElement(t *testing.T) {
 	p := NewParagraph("Hello ", font.Helvetica, 12)
 	// Should not panic.
 	p.AddRun(RunInline(el))
-	p.AddRun(Run(" World", font.Helvetica, 12))
+	p.AddRun(NewRun(" World", font.Helvetica, 12))
 }
 
 func TestParagraphInlineElementLayout(t *testing.T) {
@@ -559,9 +559,9 @@ func TestParagraphInlineElementLayout(t *testing.T) {
 	// should fit on one line.
 	el := &fixedElement{width: 20, height: 16}
 	p := NewStyledParagraph(
-		Run("Hello ", font.Helvetica, 12),
+		NewRun("Hello ", font.Helvetica, 12),
 		RunInline(el),
-		Run(" World", font.Helvetica, 12),
+		NewRun(" World", font.Helvetica, 12),
 	)
 
 	lines := p.Layout(500)
@@ -587,9 +587,9 @@ func TestParagraphInlineElementLayout(t *testing.T) {
 func TestParagraphInlineElementPlanLayout(t *testing.T) {
 	el := &fixedElement{width: 20, height: 16}
 	p := NewStyledParagraph(
-		Run("Hello ", font.Helvetica, 12),
+		NewRun("Hello ", font.Helvetica, 12),
 		RunInline(el),
-		Run(" World", font.Helvetica, 12),
+		NewRun(" World", font.Helvetica, 12),
 	)
 
 	plan := p.PlanLayout(LayoutArea{Width: 500, Height: 1000})
@@ -608,7 +608,7 @@ func TestParagraphInlineElementWraps(t *testing.T) {
 	// Very narrow width should force text + inline element to wrap.
 	el := &fixedElement{width: 30, height: 16}
 	p := NewStyledParagraph(
-		Run("Hello ", font.Helvetica, 12),
+		NewRun("Hello ", font.Helvetica, 12),
 		RunInline(el),
 	)
 
@@ -623,7 +623,7 @@ func TestParagraphInlineElementLineHeight(t *testing.T) {
 	// Inline element taller than text should increase line height.
 	el := &fixedElement{width: 20, height: 50}
 	p := NewStyledParagraph(
-		Run("Hello ", font.Helvetica, 12),
+		NewRun("Hello ", font.Helvetica, 12),
 		RunInline(el),
 	)
 
@@ -658,7 +658,7 @@ func TestInlineSpaceAfterFromFollowingRun(t *testing.T) {
 	el := &fixedElement{width: 20, height: 16}
 	p := NewStyledParagraph(
 		RunInline(el),
-		Run(" World", font.Helvetica, 12),
+		NewRun(" World", font.Helvetica, 12),
 	)
 
 	lines := p.Layout(500)
@@ -707,7 +707,7 @@ func TestInlineSpaceAfterInheritsPreceding(t *testing.T) {
 	// from the preceding text word.
 	el := &fixedElement{width: 20, height: 16}
 	p := NewStyledParagraph(
-		Run("Hello ", font.Helvetica, 12),
+		NewRun("Hello ", font.Helvetica, 12),
 		RunInline(el),
 	)
 
@@ -738,7 +738,7 @@ func TestInlineSpaceAfterPlanLayoutMatchesLayout(t *testing.T) {
 	el := &fixedElement{width: 20, height: 16}
 	p := NewStyledParagraph(
 		RunInline(el),
-		Run(" World", font.Helvetica, 12),
+		NewRun(" World", font.Helvetica, 12),
 	)
 
 	lines := p.Layout(500)
@@ -759,5 +759,100 @@ func TestInlineSpaceAfterPlanLayoutMatchesLayout(t *testing.T) {
 	}
 	if layoutSA == 0 {
 		t.Error("expected non-zero SpaceAfter from font metrics look-ahead")
+	}
+}
+
+// --- Inline element alignment ---
+
+func TestCenteredParagraphInlineChildBlockIsLineRelative(t *testing.T) {
+	// When a centered paragraph contains an inline element, the child
+	// PlacedBlock's X should be line-relative (starting near 0), not
+	// include the alignment offset. The parent block's X already carries
+	// the centering offset, and the renderer adds parent X to child X.
+	el := &fixedElement{width: 40, height: 16}
+	p := NewStyledParagraph(
+		NewRun("AB ", font.Helvetica, 12),
+		RunInline(el),
+	)
+	p.SetAlign(AlignCenter)
+
+	plan := p.PlanLayout(LayoutArea{Width: 500, Height: 1000})
+	if plan.Status != LayoutFull {
+		t.Fatalf("expected LayoutFull, got %d", plan.Status)
+	}
+	if len(plan.Blocks) == 0 {
+		t.Fatal("expected at least one block")
+	}
+
+	lineBlock := plan.Blocks[0]
+
+	// The line block itself should be offset for centering.
+	if lineBlock.X < 1 {
+		t.Errorf("line block X = %.2f, expected positive centering offset", lineBlock.X)
+	}
+
+	// The inline child should be line-relative: its X should be
+	// approximately the width of "AB " (not "AB " + centering offset).
+	if len(lineBlock.Children) == 0 {
+		t.Fatal("expected inline child blocks")
+	}
+	childX := lineBlock.Children[0].X
+	// "AB " in Helvetica 12pt ≈ 18-20pt. The child X should be in that
+	// range, not shifted by hundreds of points from centering.
+	if childX > 50 {
+		t.Errorf("child X = %.2f, expected < 50 (line-relative), got alignment offset leak", childX)
+	}
+}
+
+func TestRightAlignedParagraphInlineChildBlockIsLineRelative(t *testing.T) {
+	el := &fixedElement{width: 40, height: 16}
+	p := NewStyledParagraph(
+		NewRun("AB ", font.Helvetica, 12),
+		RunInline(el),
+	)
+	p.SetAlign(AlignRight)
+
+	plan := p.PlanLayout(LayoutArea{Width: 500, Height: 1000})
+	if len(plan.Blocks) == 0 || len(plan.Blocks[0].Children) == 0 {
+		t.Fatal("expected blocks with children")
+	}
+
+	lineBlock := plan.Blocks[0]
+	childX := lineBlock.Children[0].X
+
+	// Right-aligned line block should have large X offset.
+	if lineBlock.X < 100 {
+		t.Errorf("line block X = %.2f, expected large right-alignment offset", lineBlock.X)
+	}
+	// Child should still be line-relative (small X).
+	if childX > 50 {
+		t.Errorf("child X = %.2f, expected < 50 (line-relative), got alignment offset leak", childX)
+	}
+}
+
+func TestLeftAlignedParagraphInlineChildBlockConsistency(t *testing.T) {
+	// Left-aligned should also have line-relative children at X ≈ 0
+	// (since the line block X is 0 for left alignment).
+	el := &fixedElement{width: 40, height: 16}
+	p := NewStyledParagraph(
+		RunInline(el),
+		NewRun(" text", font.Helvetica, 12),
+	)
+	p.SetAlign(AlignLeft)
+
+	plan := p.PlanLayout(LayoutArea{Width: 500, Height: 1000})
+	if len(plan.Blocks) == 0 || len(plan.Blocks[0].Children) == 0 {
+		t.Fatal("expected blocks with children")
+	}
+
+	lineBlock := plan.Blocks[0]
+	// Left-aligned: line block X should be 0.
+	if lineBlock.X > 0.1 {
+		t.Errorf("line block X = %.2f, expected 0 for left alignment", lineBlock.X)
+	}
+	// Leading inline child should start at X ≈ 0.
+	childX := lineBlock.Children[0].X
+	if childX > 1 {
+		t.Errorf("child X = %.2f, expected ~0 for leading inline element", childX)
 	}
 }

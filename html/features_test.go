@@ -1669,3 +1669,57 @@ func TestInlineBlockSVGStillInlinedInParagraph(t *testing.T) {
 		t.Errorf("expected 1 block (single line), got %d", len(plan.Blocks))
 	}
 }
+
+func TestInlineBlockSVGInDivRendersMedia(t *testing.T) {
+	// An SVG with display:inline-block inside a wrapper div (not a
+	// paragraph) should still render as actual SVG media, not an empty
+	// block container. This tests the top-level dispatch: replaced
+	// elements must use their specialized converters regardless of
+	// display value.
+	src := `<div><svg style="display:inline-block" width="100" height="50" viewBox="0 0 100 50"><rect width="100" height="50" fill="#333"/></svg></div>`
+	elems, err := Convert(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) == 0 {
+		t.Fatal("expected elements")
+	}
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 500, Height: 1000})
+	if plan.Consumed < 40 {
+		t.Errorf("consumed = %.1f, expected >= 40 (SVG should render as 50pt-tall media, not empty block)", plan.Consumed)
+	}
+}
+
+func TestInlineBlockImageInFlexRendersMedia(t *testing.T) {
+	// An image with display:inline-block inside a flex container should
+	// render as actual image media.
+	src := `<div style="display:flex"><img style="display:inline-block" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" width="80" height="40"></div>`
+	elems, err := Convert(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) == 0 {
+		t.Fatal("expected elements")
+	}
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 500, Height: 1000})
+	if plan.Consumed < 30 {
+		t.Errorf("consumed = %.1f, expected >= 30 (image should render as media, not empty block)", plan.Consumed)
+	}
+}
+
+func TestInlineBlockSVGInFlexRendersMedia(t *testing.T) {
+	// SVG with display:inline-block inside a flex container with centering
+	// — the common pattern for centered images in editors.
+	src := `<div style="display:flex;justify-content:center"><svg style="display:inline-block;width:120px;height:60px" xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 120 60"><rect width="120" height="60" fill="#111827"/></svg></div>`
+	elems, err := Convert(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) == 0 {
+		t.Fatal("expected elements for flex-wrapped inline-block SVG")
+	}
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 500, Height: 1000})
+	if plan.Consumed < 40 {
+		t.Errorf("consumed = %.1f, expected >= 40 (SVG should render as media in flex container)", plan.Consumed)
+	}
+}

@@ -206,23 +206,8 @@ func (p *Paragraph) Layout(maxWidth float64) []Line {
 	var maxFontSize float64
 
 	for i, run := range p.runs {
-		// Inline element runs produce a single InlineBlock word.
 		if run.InlineElement != nil {
-			plan := run.InlineElement.PlanLayout(LayoutArea{
-				Width: maxWidth, Height: 1e6,
-			})
-			var iw, ih float64
-			if plan.Status != LayoutNothing && len(plan.Blocks) > 0 {
-				iw = plan.Blocks[0].Width
-				ih = plan.Consumed
-			}
-			measured = append(measured, Word{
-				InlineBlock:  run.InlineElement,
-				InlineWidth:  iw,
-				InlineHeight: ih,
-				Width:        iw,
-				SpaceAfter:   inlineSpaceAfter(measured, p.runs, i),
-			})
+			measured = append(measured, measureInlineElement(run, maxWidth, measured, p.runs, i))
 			continue
 		}
 
@@ -405,6 +390,28 @@ func runMeasurer(run TextRun) font.TextMeasurer {
 	return run.Font
 }
 
+// measureInlineElement measures an inline element run and returns a Word
+// representing it as an inline-block in the paragraph's word stream.
+// Both Layout() and measureWords() use this to keep measurement logic
+// in one place.
+func measureInlineElement(run TextRun, maxWidth float64, measured []Word, runs []TextRun, runIdx int) Word {
+	plan := run.InlineElement.PlanLayout(LayoutArea{
+		Width: maxWidth, Height: 1e6,
+	})
+	var iw, ih float64
+	if plan.Status != LayoutNothing && len(plan.Blocks) > 0 {
+		iw = plan.Blocks[0].Width
+		ih = plan.Consumed
+	}
+	return Word{
+		InlineBlock:  run.InlineElement,
+		InlineWidth:  iw,
+		InlineHeight: ih,
+		Width:        iw,
+		SpaceAfter:   inlineSpaceAfter(measured, runs, runIdx),
+	}
+}
+
 // inlineSpaceAfter computes the space-after width for an inline element word.
 // It uses surrounding text metrics when available: first from already-measured
 // words (preceding context), then by scanning forward in the runs for the
@@ -422,11 +429,7 @@ func inlineSpaceAfter(measured []Word, runs []TextRun, currentIdx int) float64 {
 		if r.InlineElement != nil {
 			continue
 		}
-		m := runMeasurer(r)
-		if m == nil {
-			continue
-		}
-		return m.MeasureString(" ", r.FontSize) + r.WordSpacing
+		return runMeasurer(r).MeasureString(" ", r.FontSize) + r.WordSpacing
 	}
 	// No text context at all — flush spacing.
 	return 0
@@ -807,9 +810,12 @@ func (p *Paragraph) PlanLayout(area LayoutArea) LayoutPlan {
 		capturedBg := p.background
 		capturedLineH := lineHeights[i]
 
-		// Build child blocks for inline-block words.
+		// Build child blocks for inline-block words. Positions are
+		// line-relative (starting at 0); the parent PlacedBlock's X
+		// already carries the alignment offset, and the renderer adds
+		// parent X to child X when drawing (render_plans.go).
 		var inlineChildren []PlacedBlock
-		inlineX := x
+		inlineX := 0.0
 		for _, w := range info.words {
 			if w.InlineBlock != nil {
 				ibPlan := w.InlineBlock.PlanLayout(LayoutArea{
@@ -821,12 +827,7 @@ func (p *Paragraph) PlanLayout(area LayoutArea) LayoutPlan {
 					inlineChildren = append(inlineChildren, ib)
 				}
 			}
-			inlineX += w.Width
-			if w.InlineBlock != nil {
-				inlineX += w.SpaceAfter
-			} else {
-				inlineX += w.SpaceAfter
-			}
+			inlineX += w.Width + w.SpaceAfter
 		}
 
 		block := PlacedBlock{
@@ -893,23 +894,8 @@ func (p *Paragraph) measureWords(maxWidth float64) ([]Word, float64) {
 	var maxFontSize float64
 
 	for i, run := range p.runs {
-		// Inline element runs produce a single InlineBlock word.
 		if run.InlineElement != nil {
-			plan := run.InlineElement.PlanLayout(LayoutArea{
-				Width: maxWidth, Height: 1e6,
-			})
-			var iw, ih float64
-			if plan.Status != LayoutNothing && len(plan.Blocks) > 0 {
-				iw = plan.Blocks[0].Width
-				ih = plan.Consumed
-			}
-			measured = append(measured, Word{
-				InlineBlock:  run.InlineElement,
-				InlineWidth:  iw,
-				InlineHeight: ih,
-				Width:        iw,
-				SpaceAfter:   inlineSpaceAfter(measured, p.runs, i),
-			})
+			measured = append(measured, measureInlineElement(run, maxWidth, measured, p.runs, i))
 			continue
 		}
 
