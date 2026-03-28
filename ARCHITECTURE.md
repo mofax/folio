@@ -108,6 +108,29 @@ access to types defined in another layer. If these cross-layer imports
 grow, consider extracting shared types into `core` or a new `model`
 package.
 
+### Known structural TODOs
+
+These are deferred refactors that would improve the architecture but
+have high churn cost relative to immediate benefit. Tackle them when a
+natural trigger arises (e.g., a new package needs `Color`).
+
+- **TODO(A4): Unify `layout.Color` and `svg.Color`.** Two separate
+  Color types serve the same purpose. Extract a shared color type into
+  `core` or a new `style` package to eliminate conversion friction.
+  Trigger: when a third package (e.g., `markdown`) needs a Color type.
+
+- **TODO(A5): Reduce `layout` package surface area.** At ~75 exported
+  types, `layout` is the largest package. Primitives like `Color`,
+  `Margins`, `Padding`, `UnitValue` could move to a shared package.
+  Trigger: when `layout` grows further or when multiple packages need
+  these primitives independently.
+
+- **TODO(A6): Split `reader` into focused packages.** The `reader`
+  package handles parsing, text extraction, merging, and redaction —
+  four distinct concerns. Splitting into `reader`, `merge`, and
+  `redact` would improve cohesion. Trigger: when any of these areas
+  grows significantly or gains its own public API surface.
+
 ---
 
 ## Naming conventions
