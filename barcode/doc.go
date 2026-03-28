@@ -6,9 +6,9 @@
 //
 // Supported formats:
 //
-//   - QR Code (ISO/IEC 18004) — via [QR] and [QRWithECC]
-//   - Code 128 (ISO/IEC 15417) — via [Code128]
-//   - EAN-13 (GS1 General Specifications) — via [EAN13]
+//   - QR Code (ISO/IEC 18004) — via [NewQR] and [NewQRWithECC]
+//   - Code 128 (ISO/IEC 15417) — via [NewCode128]
+//   - EAN-13 (GS1 General Specifications) — via [NewEAN13]
 //
 // Each constructor returns a [Barcode] holding a 2D module grid.
 // Call [Barcode.Draw] to render the barcode onto a [content.Stream]

@@ -4,7 +4,7 @@
 // Package reader parses existing PDF files and provides access to
 // document structure, pages, and content.
 //
-// Use [Open] to read from a file path or [Parse] / [ParseWithOptions]
+// Use [Load] to read from a file path or [Parse] / [ParseWithOptions]
 // to read from bytes. The returned [PdfReader] exposes page geometry
 // (MediaBox, CropBox, BleedBox, TrimBox, ArtBox per §14.11.2),
 // text extraction with multiple strategies, content-stream parsing,

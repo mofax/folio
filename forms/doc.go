@@ -6,10 +6,10 @@
 //
 // Supported field types:
 //
-//   - Text input — [TextField], [MultilineTextField], [PasswordField]
-//   - Selection — [Checkbox], [RadioGroup], [Dropdown], [ListBox]
-//   - Action — [PushButton]
-//   - Signature — [SignatureField]
+//   - Text input — [NewTextField], [NewMultilineTextField], [NewPasswordField]
+//   - Selection — [NewCheckbox], [NewRadioGroup], [NewDropdown], [NewListBox]
+//   - Action — PushButton (via [Field] with FieldPushButton type)
+//   - Signature — [NewSignatureField]
 //
 // Each factory function returns a [Field] that can be configured with
 // flags (ReadOnly, Required, etc.) and appearance properties. Call
