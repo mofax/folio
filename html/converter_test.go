@@ -1394,6 +1394,65 @@ func TestPageBreakInsideDivWrapper(t *testing.T) {
 	}
 }
 
+func TestPageBreakInsideAvoid(t *testing.T) {
+	// A div with page-break-inside: avoid and box-model properties
+	// (to ensure a Div is produced) should have KeepTogether set.
+	htmlStr := `<div style="page-break-inside: avoid; padding: 5px; background: #eee">
+		<p>Keep me together</p>
+		<p>Second paragraph</p>
+	</div>`
+	elems, err := Convert(htmlStr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range elems {
+		if div, ok := e.(*layout.Div); ok {
+			if div.KeepTogether() {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Error("expected Div with KeepTogether=true for page-break-inside: avoid")
+		for i, e := range elems {
+			t.Logf("  [%d] %T", i, e)
+		}
+	}
+}
+
+func TestPageBreakInsideAvoidRenderer(t *testing.T) {
+	// A tall div with page-break-inside: avoid on a small page should
+	// move to the next page instead of splitting.
+	// Use paragraphs with enough text to take space, then a Div.
+	p1 := layout.NewParagraph("First paragraph with enough content to take up space on the page. "+
+		"This should use a significant portion of the available area.", font.Helvetica, 12)
+
+	div2 := layout.NewDiv()
+	div2.SetBackground(layout.RGB(1, 0, 0))
+	div2.SetPadding(10)
+	div2.SetKeepTogether(true)
+	// Add several child paragraphs to make the div tall enough to split.
+	for i := range 10 {
+		_ = i
+		div2.Add(layout.NewParagraph("Line of text in the keep-together div. "+
+			"This needs to be long enough that the div exceeds remaining space.", font.Helvetica, 12))
+	}
+
+	margins := layout.Margins{Top: 20, Bottom: 20, Left: 20, Right: 20}
+	r := layout.NewRenderer(612, 200, margins) // very short page (160pt content area)
+	r.Add(p1)
+	r.Add(div2)
+	pages := r.Render()
+
+	// p1 takes some space, then div2 doesn't fit and has KeepTogether.
+	// It should move to page 2 rather than splitting.
+	if len(pages) < 2 {
+		t.Fatalf("expected at least 2 pages, got %d", len(pages))
+	}
+}
+
 // --- !important ---
 
 func TestCSSImportant(t *testing.T) {
