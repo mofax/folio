@@ -18,17 +18,18 @@ type Paragraph struct {
 	runs             []TextRun
 	leading          float64 // line height multiplier (e.g. 1.2 means 120% of fontSize)
 	align            Align
-	spaceBefore      float64 // extra space before the paragraph (points)
-	spaceAfter       float64 // extra space after the paragraph (points)
-	background       *Color  // background fill color (nil = transparent)
-	firstIndent      float64 // first-line indent (points, from CSS text-indent)
-	orphans          int     // min lines at bottom of page before break (0 = disabled)
-	widows           int     // min lines at top of page after break (0 = disabled)
-	ellipsis         bool    // if true, truncate overflowing text with "..."
-	wordBreak        string  // "normal" (default), "break-all" (allow break within words)
-	hyphens          string  // "none", "manual" (default), "auto" (automatic hyphenation)
-	textAlignLast    Align   // alignment for the last line (0 = use default)
-	textAlignLastSet bool    // true if textAlignLast was explicitly set
+	spaceBefore      float64           // extra space before the paragraph (points)
+	spaceAfter       float64           // extra space after the paragraph (points)
+	background       *Color            // background fill color (nil = transparent)
+	firstIndent      float64           // first-line indent (points, from CSS text-indent)
+	orphans          int               // min lines at bottom of page before break (0 = disabled)
+	widows           int               // min lines at top of page after break (0 = disabled)
+	ellipsis         bool              // if true, truncate overflowing text with "..."
+	wordBreak        string            // "normal" (default), "break-all" (allow break within words)
+	hyphens          string            // "none", "manual" (default), "auto" (automatic hyphenation)
+	textAlignLast    Align             // alignment for the last line (0 = use default)
+	textAlignLastSet bool              // true if textAlignLast was explicitly set
+	stringSets       map[string]string // CSS string-set values to capture
 }
 
 // NewParagraph creates a paragraph with a single run using a standard PDF font.
@@ -162,6 +163,15 @@ func (p *Paragraph) SetHyphens(h string) *Paragraph {
 func (p *Paragraph) SetTextAlignLast(a Align) *Paragraph {
 	p.textAlignLast = a
 	p.textAlignLastSet = true
+	return p
+}
+
+// SetStringSet attaches a CSS string-set value to this paragraph.
+func (p *Paragraph) SetStringSet(name, value string) *Paragraph {
+	if p.stringSets == nil {
+		p.stringSets = make(map[string]string)
+	}
+	p.stringSets[name] = value
 	return p
 }
 
@@ -785,6 +795,10 @@ func (p *Paragraph) PlanLayout(area LayoutArea) LayoutPlan {
 		// Compute precise link annotations for every distinct link URI
 		// in this line. Each linked span gets its own annotation rect.
 		block.Links = linkSpans(info.words)
+		// Attach string-set values on the first block.
+		if i == 0 && len(p.stringSets) > 0 {
+			block.StringSets = p.stringSets
+		}
 		blocks = append(blocks, block)
 		curY += capturedLineH
 		if i == splitIdx-1 {
