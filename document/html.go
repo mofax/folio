@@ -4,6 +4,10 @@
 package document
 
 import (
+	"bytes"
+	"fmt"
+	"html/template"
+
 	foliohtml "github.com/carlos7ags/folio/html"
 	"github.com/carlos7ags/folio/layout"
 )
@@ -110,4 +114,48 @@ func (d *Document) AddHTML(htmlStr string, opts *foliohtml.Options) error {
 	}
 
 	return nil
+}
+
+// AddHTMLTemplate executes a Go [html/template] with the given data and
+// adds the resulting HTML to the document. This is a convenience for the
+// common workflow of rendering a template with dynamic data to produce a
+// PDF — e.g., invoices, reports, or letters.
+//
+// The template string is parsed with [html/template.New] and executed
+// with data. The result is passed to [Document.AddHTML]. Template
+// functions, CSS <style> blocks, and all HTML features supported by
+// [AddHTML] work as expected.
+//
+//	doc.AddHTMLTemplate(`
+//	  <h1>Invoice #{{.Number}}</h1>
+//	  <table>
+//	    {{range .Items}}
+//	    <tr><td>{{.Name}}</td><td>{{.Price}}</td></tr>
+//	    {{end}}
+//	  </table>
+//	`, invoiceData, nil)
+func (d *Document) AddHTMLTemplate(tmplStr string, data any, opts *foliohtml.Options) error {
+	t, err := template.New("folio").Parse(tmplStr)
+	if err != nil {
+		return fmt.Errorf("document: parse template: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return fmt.Errorf("document: execute template: %w", err)
+	}
+	return d.AddHTML(buf.String(), opts)
+}
+
+// AddHTMLTemplateFuncs is like [AddHTMLTemplate] but accepts custom
+// template functions via a [template.FuncMap].
+func (d *Document) AddHTMLTemplateFuncs(tmplStr string, funcs template.FuncMap, data any, opts *foliohtml.Options) error {
+	t, err := template.New("folio").Funcs(funcs).Parse(tmplStr)
+	if err != nil {
+		return fmt.Errorf("document: parse template: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return fmt.Errorf("document: execute template: %w", err)
+	}
+	return d.AddHTML(buf.String(), opts)
 }
