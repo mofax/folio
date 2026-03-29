@@ -151,10 +151,7 @@ func TestGridEmpty(t *testing.T) {
 	})
 
 	plan := g.PlanLayout(LayoutArea{Width: 400, Height: 500})
-	// Empty grid should produce Full status with no blocks or minimal output.
-	if plan.Status == LayoutNothing {
-		// Acceptable — empty grid has nothing to lay out.
-	}
+	// Empty grid should not panic. Any status is acceptable.
 	_ = plan
 }
 
