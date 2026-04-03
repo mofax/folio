@@ -23,7 +23,9 @@ type renderSettings struct {
 	PdfTitle             string `json:"pdfTitle"`
 	IgnoreResourceErrors bool   `json:"ignoreResourceErrors"`
 	CssDpi               int    `json:"cssDpi"`
-	Watermark            string `json:"watermark,omitempty"` // optional watermark text
+	Watermark            string `json:"watermark,omitempty"`  // optional watermark text
+	HeaderHTML           string `json:"headerHtml,omitempty"` // HTML for page header
+	FooterHTML           string `json:"footerHtml,omitempty"` // HTML for page footer
 }
 
 func renderHTML(_ js.Value, args []js.Value) any {
@@ -146,6 +148,38 @@ func renderHTML(_ js.Value, args []js.Value) any {
 			Angle:    -35,
 			Opacity:  0.04,
 		})
+	}
+
+	// Header/footer from HTML.
+	if settings.HeaderHTML != "" {
+		headerElems, err := html.Convert(settings.HeaderHTML, nil)
+		if err == nil && len(headerElems) > 0 {
+			doc.SetHeaderElement(func(_ document.PageContext) layout.Element {
+				if len(headerElems) == 1 {
+					return headerElems[0]
+				}
+				div := layout.NewDiv()
+				for _, e := range headerElems {
+					div.Add(e)
+				}
+				return div
+			})
+		}
+	}
+	if settings.FooterHTML != "" {
+		footerElems, err := html.Convert(settings.FooterHTML, nil)
+		if err == nil && len(footerElems) > 0 {
+			doc.SetFooterElement(func(_ document.PageContext) layout.Element {
+				if len(footerElems) == 1 {
+					return footerElems[0]
+				}
+				div := layout.NewDiv()
+				for _, e := range footerElems {
+					div.Add(e)
+				}
+				return div
+			})
+		}
 	}
 
 	// PDF profiles
