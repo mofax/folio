@@ -494,22 +494,50 @@ func unescapeCSS(s string) string {
 func parseSelectorPart(s string) selectorPart {
 	var part selectorPart
 
-	// Extract attribute selectors [attr], [attr=value], etc. before other parsing.
-	for {
-		openBrk := strings.IndexByte(s, '[')
-		if openBrk < 0 {
-			break
-		}
-		closeBrk := strings.IndexByte(s[openBrk:], ']')
-		if closeBrk < 0 {
-			break
-		}
-		closeBrk += openBrk
-		attrContent := s[openBrk+1 : closeBrk]
-		s = s[:openBrk] + s[closeBrk+1:]
+	// Extract top-level attribute selectors [attr], [attr=value], etc.
+	// Brackets inside parentheses belong to pseudo-classes like :not([hidden])
+	// and must not be extracted here.
+	{
+		i := 0
+		for i < len(s) {
+			openBrk := strings.IndexByte(s[i:], '[')
+			if openBrk < 0 {
+				break
+			}
+			openBrk += i
 
-		as := parseAttrSelector(attrContent)
-		part.attrSelectors = append(part.attrSelectors, as)
+			// Check if this bracket is inside parentheses.
+			parenDepth := 0
+			for j := 0; j < openBrk; j++ {
+				switch s[j] {
+				case '(':
+					parenDepth++
+				case ')':
+					parenDepth--
+				}
+			}
+			if parenDepth > 0 {
+				// Skip past this bracket pair — it belongs to a pseudo-class.
+				closeBrk := strings.IndexByte(s[openBrk:], ']')
+				if closeBrk < 0 {
+					break
+				}
+				i = openBrk + closeBrk + 1
+				continue
+			}
+
+			closeBrk := strings.IndexByte(s[openBrk:], ']')
+			if closeBrk < 0 {
+				break
+			}
+			closeBrk += openBrk
+			attrContent := s[openBrk+1 : closeBrk]
+			s = s[:openBrk] + s[closeBrk+1:]
+
+			as := parseAttrSelector(attrContent)
+			part.attrSelectors = append(part.attrSelectors, as)
+			// Don't advance i — the string was shortened, next '[' is at same position.
+		}
 	}
 
 	// Handle pseudo-class (e.g. ":first-child", ":nth-child(2)").

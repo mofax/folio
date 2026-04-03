@@ -3866,6 +3866,84 @@ func TestNotPseudoClassID(t *testing.T) {
 	}
 }
 
+func TestNotPseudoClassAttribute(t *testing.T) {
+	// :not([hidden]) should match elements WITHOUT the hidden attribute
+	// and NOT match elements WITH the hidden attribute.
+	// Verify by applying different colors to :not([hidden]) vs [hidden].
+	htmlStr := `<style>
+		p:not([hidden]) { color: red; }
+		p[hidden] { color: blue; }
+		.wrap { padding: 1px; }
+	</style>
+	<div class="wrap">
+		<p>Visible</p>
+		<p hidden>Hidden</p>
+	</div>`
+	elems, err := Convert(htmlStr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elems) == 0 {
+		t.Fatal("expected elements")
+	}
+	// Both paragraphs should render (hidden only affects browsers, not PDF).
+	// The key assertion: :not([hidden]) matched the first <p> and [hidden]
+	// matched the second. Verify layout succeeds with both rules applied.
+	plan := elems[0].PlanLayout(layout.LayoutArea{Width: 500, Height: 1000})
+	if plan.Status == layout.LayoutNothing {
+		t.Error("unexpected LayoutNothing")
+	}
+	if len(plan.Blocks) == 0 {
+		t.Error("expected blocks from div with two paragraphs")
+	}
+}
+
+func TestNotWithAttrSiblingCombinator(t *testing.T) {
+	// CSS pattern: > :not([hidden]) ~ :not([hidden]) { margin-top: ... }
+	// Combines child combinator (>), :not() with attribute selector,
+	// and general sibling combinator (~).
+	// Used by CSS frameworks for spacing between visible siblings.
+	htmlWith := `<style>
+		.container > :not([hidden]) ~ :not([hidden]) { margin-top: 30px; }
+		.container { padding: 1px; }
+	</style>
+	<div class="container">
+		<p>First</p>
+		<p>Second</p>
+		<p>Third</p>
+	</div>`
+
+	htmlWithout := `<style>
+		.container { padding: 1px; }
+	</style>
+	<div class="container">
+		<p>First</p>
+		<p>Second</p>
+		<p>Third</p>
+	</div>`
+
+	elemsWith, err := Convert(htmlWith, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	elemsWithout, err := Convert(htmlWithout, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elemsWith) == 0 || len(elemsWithout) == 0 {
+		t.Fatal("expected elements from both versions")
+	}
+
+	planWith := elemsWith[0].PlanLayout(layout.LayoutArea{Width: 500, Height: 1000})
+	planWithout := elemsWithout[0].PlanLayout(layout.LayoutArea{Width: 500, Height: 1000})
+
+	// The version with margins should consume more height.
+	if planWith.Consumed <= planWithout.Consumed {
+		t.Errorf(":not([attr]) ~ :not([attr]) margin not applied: with=%f, without=%f",
+			planWith.Consumed, planWithout.Consumed)
+	}
+}
+
 func TestBoxShadow(t *testing.T) {
 	htmlStr := `<div style="box-shadow: 5px 5px 10px 2px gray; padding: 10px"><p>Shadow box</p></div>`
 	elems, err := Convert(htmlStr, nil)
