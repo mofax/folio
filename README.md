@@ -7,7 +7,7 @@ forms, digital signatures, barcodes, page import, and PDF/A compliance.
 [![CI](https://github.com/carlos7ags/folio/actions/workflows/ci.yml/badge.svg)](https://github.com/carlos7ags/folio/actions)
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**[Try it live in your browser](https://folio-playground.pages.dev/)**
+**[Try it live in your browser](https://playground.foliopdf.dev/)**
 
 ![Folio Playground](assets/playground.png)
 
@@ -80,7 +80,7 @@ doc.Save("invoice.pdf")
 Supports 40+ HTML elements, inline and `<style>` block CSS, flexbox, CSS grid,
 SVG, named/hex/rgb colors, `@page` rules, and tables with colspan.
 
-**[Try HTML to PDF live in your browser](https://folio-playground.pages.dev/)**
+**[Try HTML to PDF live in your browser](https://playground.foliopdf.dev/)**
 
 ---
 
