@@ -652,3 +652,96 @@ func TestFlexAlignContentTightContainer(t *testing.T) {
 	}
 	// Partial layout is also acceptable for a very tight container.
 }
+
+func TestFlexColumnJustifyContentCenter(t *testing.T) {
+	// Flex column with 2 small items in a tall container, centered.
+	f := NewFlex()
+	f.SetDirection(FlexColumn)
+	f.SetJustifyContent(JustifyCenter)
+	f.Add(NewParagraph("Top", font.Helvetica, 12))
+	f.Add(NewParagraph("Bottom", font.Helvetica, 12))
+
+	// Force a 300pt height so items have room to center.
+	f.ForceHeight(Pt(300))
+	plan := f.PlanLayout(LayoutArea{Width: 400, Height: 300})
+	if plan.Status == LayoutNothing {
+		t.Fatal("expected output")
+	}
+	// Items should not start at Y=0 — they should be pushed down by centering.
+	if len(plan.Blocks) > 0 && len(plan.Blocks[0].Children) > 0 {
+		firstChildY := plan.Blocks[0].Children[0].Y
+		if firstChildY < 50 {
+			t.Errorf("centered column items should have Y offset > 50, got %f", firstChildY)
+		}
+	}
+}
+
+func TestFlexColumnJustifySpaceBetween(t *testing.T) {
+	f := NewFlex()
+	f.SetDirection(FlexColumn)
+	f.SetJustifyContent(JustifySpaceBetween)
+	f.Add(NewParagraph("First", font.Helvetica, 12))
+	f.Add(NewParagraph("Last", font.Helvetica, 12))
+
+	f.ForceHeight(Pt(200))
+	plan := f.PlanLayout(LayoutArea{Width: 400, Height: 200})
+	if plan.Status == LayoutNothing {
+		t.Fatal("expected output")
+	}
+	// Space-between: first at top, last at bottom.
+	if len(plan.Blocks) > 0 && len(plan.Blocks[0].Children) >= 2 {
+		firstY := plan.Blocks[0].Children[0].Y
+		lastY := plan.Blocks[0].Children[len(plan.Blocks[0].Children)-1].Y
+		if lastY-firstY < 150 {
+			t.Errorf("space-between should spread items: firstY=%f lastY=%f gap=%f", firstY, lastY, lastY-firstY)
+		}
+	}
+}
+
+func TestFlexColumnOverflowWithGrow(t *testing.T) {
+	f := NewFlex()
+	f.SetDirection(FlexColumn)
+	for range 20 {
+		item := NewFlexItem(NewParagraph("Flex grow item that fills space.", font.Helvetica, 12))
+		item.SetGrow(1)
+		f.AddItem(item)
+	}
+
+	r := NewRenderer(612, 200, Margins{Top: 20, Bottom: 20, Left: 20, Right: 20})
+	r.Add(f)
+	pages := r.Render()
+	if len(pages) < 2 {
+		t.Fatalf("expected ≥2 pages for overflowing flex column, got %d", len(pages))
+	}
+	// Both pages should have content.
+	for i, p := range pages {
+		if len(p.Stream.Bytes()) == 0 {
+			t.Errorf("page %d has empty stream", i)
+		}
+	}
+}
+
+func TestDivPageSplitPreservesBordersAndBackground(t *testing.T) {
+	d := NewDiv().
+		SetBackground(RGB(0.95, 0.95, 1)).
+		SetBorder(SolidBorder(1, RGB(0.3, 0.3, 0.9))).
+		SetPadding(10)
+	for range 20 {
+		d.Add(NewParagraph("Content line that should overflow the page boundary.", font.Helvetica, 12))
+	}
+
+	r := NewRenderer(612, 200, Margins{Top: 20, Bottom: 20, Left: 20, Right: 20})
+	r.Add(d)
+	pages := r.Render()
+	if len(pages) < 2 {
+		t.Fatalf("expected ≥2 pages, got %d", len(pages))
+	}
+	// Page 2 should also have background fill (rg) and border stroke (S).
+	b2 := pages[1].Stream.Bytes()
+	if !containsOp(b2, "rg") {
+		t.Error("page 2 should have background fill color (rg)")
+	}
+	if !containsOp(b2, "S") {
+		t.Error("page 2 should have border stroke (S)")
+	}
+}
