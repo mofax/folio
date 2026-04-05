@@ -903,3 +903,45 @@ func TestTableBorderCollapseGetter(t *testing.T) {
 		t.Error("expected true after SetBorderCollapse(true)")
 	}
 }
+
+func TestTableAutoColumnWidthsContentSized(t *testing.T) {
+	// Auto-widths: columns sized by content. A wide cell should get more space.
+	tbl := NewTable()
+	tbl.SetAutoColumnWidths()
+	row := tbl.AddRow()
+	row.AddCell("Short", font.Helvetica, 10)
+	row.AddCell("This is a much longer cell with more content", font.Helvetica, 10)
+
+	plan := tbl.PlanLayout(LayoutArea{Width: 400, Height: 500})
+	if plan.Status == LayoutNothing {
+		t.Fatal("expected output")
+	}
+	if plan.Consumed <= 0 {
+		t.Error("expected positive consumed height")
+	}
+}
+
+func TestTableCellSpacingWithColspan(t *testing.T) {
+	tbl := NewTable()
+	tbl.SetColumnWidths([]float64{100, 100, 100})
+	tbl.SetCellSpacing(5, 5)
+
+	row1 := tbl.AddRow()
+	c := row1.AddCell("Spanning two columns", font.Helvetica, 10)
+	c.SetColspan(2)
+	row1.AddCell("Normal", font.Helvetica, 10)
+
+	row2 := tbl.AddRow()
+	row2.AddCell("A", font.Helvetica, 10)
+	row2.AddCell("B", font.Helvetica, 10)
+	row2.AddCell("C", font.Helvetica, 10)
+
+	plan := tbl.PlanLayout(LayoutArea{Width: 400, Height: 500})
+	if plan.Status == LayoutNothing {
+		t.Fatal("expected output")
+	}
+	// Spacing adds gaps — consumed height should include spacing.
+	if plan.Consumed < 30 {
+		t.Errorf("expected consumed > 30 with cell spacing, got %f", plan.Consumed)
+	}
+}

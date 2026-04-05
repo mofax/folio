@@ -308,6 +308,65 @@ func TestGridRowGapAddsHeight(t *testing.T) {
 	}
 }
 
+func TestGridAlignContentCenter(t *testing.T) {
+	g := NewGrid()
+	g.SetTemplateColumns([]GridTrack{{Type: GridTrackFr, Value: 1}})
+	g.SetTemplateRows([]GridTrack{{Type: GridTrackPx, Value: 30}})
+	g.SetAlignContent(JustifyCenter)
+	g.AddChild(NewParagraph("One row", font.Helvetica, 12))
+
+	g.ForceHeight(Pt(200))
+	plan := g.PlanLayout(LayoutArea{Width: 400, Height: 200})
+	if plan.Status == LayoutNothing {
+		t.Fatal("expected output")
+	}
+	if plan.Consumed < 195 {
+		t.Errorf("forced height should be ~200pt, got %f", plan.Consumed)
+	}
+}
+
+func TestGridJustifyContentSpaceBetween(t *testing.T) {
+	g := NewGrid()
+	g.SetTemplateColumns([]GridTrack{
+		{Type: GridTrackPx, Value: 80},
+		{Type: GridTrackPx, Value: 80},
+		{Type: GridTrackPx, Value: 80},
+	})
+	g.SetJustifyContent(JustifySpaceBetween)
+	g.AddChild(NewParagraph("A", font.Helvetica, 12))
+	g.AddChild(NewParagraph("B", font.Helvetica, 12))
+	g.AddChild(NewParagraph("C", font.Helvetica, 12))
+
+	r := NewRenderer(612, 792, Margins{Top: 72, Right: 72, Bottom: 72, Left: 72})
+	r.Add(g)
+	pages := r.Render()
+	if len(pages) == 0 {
+		t.Fatal("expected at least 1 page")
+	}
+	if len(pages[0].Stream.Bytes()) == 0 {
+		t.Error("expected content on page")
+	}
+}
+
+func TestGridColumnGap(t *testing.T) {
+	gNoGap := NewGrid()
+	gNoGap.SetTemplateColumns([]GridTrack{{Type: GridTrackFr, Value: 1}, {Type: GridTrackFr, Value: 1}})
+	gNoGap.AddChild(NewParagraph("A", font.Helvetica, 12))
+	gNoGap.AddChild(NewParagraph("B", font.Helvetica, 12))
+
+	gWithGap := NewGrid()
+	gWithGap.SetTemplateColumns([]GridTrack{{Type: GridTrackFr, Value: 1}, {Type: GridTrackFr, Value: 1}})
+	gWithGap.SetColumnGap(30)
+	gWithGap.AddChild(NewParagraph("A", font.Helvetica, 12))
+	gWithGap.AddChild(NewParagraph("B", font.Helvetica, 12))
+
+	planNo := gNoGap.PlanLayout(LayoutArea{Width: 400, Height: 500})
+	planWith := gWithGap.PlanLayout(LayoutArea{Width: 400, Height: 500})
+	if planNo.Status == LayoutNothing || planWith.Status == LayoutNothing {
+		t.Fatal("expected output from both")
+	}
+}
+
 func TestGridLayoutAPI(t *testing.T) {
 	g := NewGrid()
 	g.SetTemplateColumns([]GridTrack{{Type: GridTrackFr, Value: 1}, {Type: GridTrackFr, Value: 1}})
