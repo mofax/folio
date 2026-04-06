@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Table cell border-radius in HTML** — converter now skips radius wiring in `border-collapse: collapse` mode per CSS Backgrounds Level 3 §5.3 (#100)
 - **README Go version** corrected from 1.21+ to 1.25+ to match go.mod (#124)
 
+### Visual change
+
+- **Table borders now render in `separate` mode by default** (previously `collapse`). Tables without explicit `border-collapse: collapse` in CSS will show individual cell borders instead of shared borders. This matches browser behavior per CSS 2.1 §17.6. To restore the old behavior, add `table { border-collapse: collapse; }` to your CSS.
+
 ### Changed
 
 - **Layout test coverage** 70% → 77.9% — 40 new integration tests for draw functions, table rendering, Div features, Grid layout, Flex column, paragraph indent/ellipsis/orphans
