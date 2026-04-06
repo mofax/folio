@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-04-05
+
+### Added
+
+- **CSS `aspect-ratio`** property on Div elements (CSS Sizing Level 4 §5.1) — derives height from width when no explicit height is set; supports `16 / 9`, `auto 16/9`, single number forms (#112)
+- **CSS Color Level 4** space-separated `rgb()`/`hsl()` syntax — `rgb(255 0 0 / 0.5)`, percentage alpha, applies to `rgba()`/`hsla()` too (#108)
+- **`html.ParseCSSLength`** public utility — converts CSS length strings (`"1in"`, `"16px"`, `"2em"`, `"50%"`, `calc()`) to PDF points (#109)
+- **`Document.ToBytes`** convenience method — returns serialized PDF as `[]byte` for HTTP responses, base64 encoding, in-memory processing (#66)
+- **Per-side border-radius on table cells** — `drawCellBordersRounded` now draws each border side independently with corner arcs, instead of requiring all four borders to be identical (#115)
+- **WASM header/footer** — `folioRender` accepts `headerHtml`/`footerHtml` in settings JSON, rendered via `SetHeaderElement`/`SetFooterElement` (#102)
+- **Invoice example** (`examples/invoice/`) — professional invoice PDF demonstrating rounded table headers, CSS Grid, Flexbox, and optional Tailwind CSS v2
+
+### Fixed
+
+- **Nil font panic** in `runMeasurer` — falls back to Helvetica when `TextRun` has no font set (#98)
+- **Table default `border-collapse`** changed from `collapse` to `separate` per CSS 2.1 §17.6 — previously prevented cell border-radius from rendering (#114)
+- **Table default margins** removed — browsers set zero margins on `<table>`; added `border-spacing: 2px` default per browser UA stylesheets (#117)
+- **Div `drawRoundedBorders`** now uses per-corner radii (`RoundedRectPerCorner`) instead of uniform radius; previously only `r[0]` was used (#104)
+- **`:not([hidden])` selector** — attribute selectors inside pseudo-class parens were incorrectly extracted, leaving empty `:not()` that always returned false; enables CSS framework `space-y-*` utilities (#101)
+- **`rem` unit parsing** — `parsePlainLength` checked `"em"` suffix before `"rem"`, so `"1rem"` failed to parse (#111)
+- **Table cell border-radius in HTML** — converter now skips radius wiring in `border-collapse: collapse` mode per CSS Backgrounds Level 3 §5.3 (#100)
+- **README Go version** corrected from 1.21+ to 1.25+ to match go.mod (#124)
+
+### Changed
+
+- **Layout test coverage** 70% → 77.9% — 40 new integration tests for draw functions, table rendering, Div features, Grid layout, Flex column, paragraph indent/ellipsis/orphans
+- **Playground URL** updated to `playground.foliopdf.dev`
+
 ## [0.6.0] - 2026-04-03
 
 **Breaking changes** — see [MIGRATING.md](MIGRATING.md) for upgrade steps.
